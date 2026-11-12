@@ -82,6 +82,7 @@ export class UI {
       case 'equip': this.toggleEquip(arg); break;
       case 'unequip': this.toggleEquip(arg); break;
       case 'level': this.briefing(Number(arg)); break;
+      case 'threat': this.say(`${ENEMY_BY_ID[arg].name} — ${ENEMY_BY_ID[arg].desc}`); break;
       case 'start': this.closeModal(); app.startLevel(Number(arg)); break;
       case 'close': this.closeModal(); break;
       case 'settings': this.settings(); break;
@@ -195,8 +196,8 @@ export class UI {
         <h2>${esc(l.name)}</h2>
         <p class="dim">${esc(l.blurb)}</p>
         <div class="meta-row"><span class="pill">${l.waves} waves</span><span class="pill">${l.paths.length > 1 ? l.paths.length + ' lanes' : '1 lane'}</span><span class="pill">${ICON.token}<b>${Math.round((l.startTokens * (1 + save.reinforcement(l.id))) / 10) * 10}</b></span>${save.reinforcement(l.id) ? `<span class="pill ok">Reinforcements +${Math.round(save.reinforcement(l.id) * 100)}%</span>` : ''}<span class="stars">${stars(save.data.stars[l.id] ?? 0)}</span></div>
-        <h3>Threats</h3>
-        <div class="threats">${types.map((t) => { const e = ENEMY_BY_ID[t]; return `<div class="threat ${e.boss ? 'boss' : ''}" title="${esc(e.desc)}"><img src="${this.app.thumbs.enemy(t, 128)}" alt=""><span>${esc(e.name)}</span></div>`; }).join('')}</div>
+        <h3>Threats <span class="hint">tap for details</span></h3>
+        <div class="threats">${types.map((t) => { const e = ENEMY_BY_ID[t]; return `<button class="threat ${e.boss ? 'boss' : ''}" data-act="threat" data-arg="${t}" aria-label="${esc(e.name)}: ${esc(e.desc)}"><img src="${this.app.thumbs.enemy(t, 128)}" alt=""><span>${esc(e.name)}</span></button>`; }).join('')}</div>
         <h3>Your loadout <button class="link" data-act="armory-from" data-arg="${l.id}">Change</button></h3>
         <div class="slots">${slots}</div>
         <button class="btn primary big wide" data-act="start" data-arg="${l.id}">${ICON.swords}<span>Deploy</span></button>

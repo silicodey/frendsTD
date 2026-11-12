@@ -12,6 +12,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" />
 </head>
 <body>
+<div id="boot" style="position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:#05070d;color:#eaf0ff;font:700 34px/1 'Chakra Petch',system-ui,sans-serif;letter-spacing:-0.01em">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:18px"><div>frends<span style="margin-left:.12em;padding:.08em .2em .04em;border-radius:.2em;color:#1b0c00;background:linear-gradient(135deg,#5b9bff,#ff8f63 34%,#2fe8a8 67%,#ff3d7a)">TD</span></div>
+  <div style="width:140px;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden"><div style="width:40%;height:100%;background:#5ff2ff;animation:bootbar 1s ease-in-out infinite alternate"></div></div></div>
+  <style>@keyframes bootbar{from{transform:translateX(-20%)}to{transform:translateX(170%)}}</style>
+</div>
 <div id="app">
   <canvas id="gl"></canvas>
   <div id="fx-text"></div>

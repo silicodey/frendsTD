@@ -2,7 +2,7 @@ import './style.css';
 import { AudioEngine } from './audio/audio';
 import { ENEMIES } from './data/enemies';
 import { LEVELS, THEMES } from './data/levels';
-import { TOWERS, TOWER_BY_ID } from './data/towers';
+import { TOWERS, TOWER_BY_ID, traits } from './data/towers';
 import { Engine } from './render/engine';
 import { Thumbs } from './render/thumbs';
 import { GameView } from './render/view';
@@ -66,11 +66,12 @@ class App implements AppApi {
     window.addEventListener('keydown', unlock);
     this.attract();
     this.ui.title();
-    requestAnimationFrame((t) => this.frame(t));
+    requestAnimationFrame((t) => { this.frame(t); document.getElementById('boot')?.remove(); });
   }
 
   // ------------------------------------------------------------ AppApi
   click() { this.audio.click(); }
+  private buzz(ms: number) { try { navigator.vibrate?.(ms); } catch { /* unsupported */ } }
   deny() { this.audio.deny(); }
   renderNow() { this.engine.render(0); }
 
@@ -351,9 +352,9 @@ class App implements AppApi {
       case 'nova': a.nova(); break;
       case 'explode': a.explode(ev.r ?? 1); break;
       case 'death': a.pop(ev.enemy!.def.size); if (ev.enemy!.def.boss) a.explode(3); this.ui.pulse('h-tokens'); break;
-      case 'leak': a.leak(); this.ui.pulse('h-lives'); break;
-      case 'build': a.build(); break;
-      case 'upgrade': a.upgrade(); break;
+      case 'leak': a.leak(); this.ui.pulse('h-lives'); this.buzz(40); break;
+      case 'build': a.build(); this.buzz(12); break;
+      case 'upgrade': a.upgrade(); this.buzz(18); break;
       case 'sell': a.sell(); break;
       case 'income': a.coin(); break;
       case 'jam': a.jam(); break;
@@ -391,7 +392,12 @@ class App implements AppApi {
   }
 
   private tutorial(dt: number) {
-    if (!this.tutStep) return;
+    if (!this.tutStep) {
+      // no tutorial running: use the tip bubble to describe the selected card
+      const d = this.selCard ? TOWER_BY_ID[this.selCard] : null;
+      this.ui.tip(d ? `${d.name} — ${d.role}. ${traits(d).slice(0, 3).join(' · ') || d.desc}` : null);
+      return;
+    }
     const tips = ['', 'Pick a tower from the bar below.', 'Now tap a glowing tile next to the path.', 'Build a few more, then press Start wave.', 'Tap a placed tower to upgrade or sell it. Hold the Core!'];
     if (this.tutStep === 4) { this.tutT += dt; if (this.tutT > 7) { this.tutStep = 0; this.save.data.tutorial = true; this.save.write(); this.ui.tip(null); return; } }
     this.ui.tip(this.selTower ? null : tips[this.tutStep]);

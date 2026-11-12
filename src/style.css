@@ -179,6 +179,7 @@ svg { display: block; }
 .threat img { width: 62px; height: 62px; border-radius: 12px; border: 1px solid rgba(255, 77, 106, 0.3); }
 .threat.boss img { border-color: var(--danger); box-shadow: 0 0 14px rgba(255, 77, 106, 0.5); }
 .threat span { font: 500 10px/1.1 var(--display); text-align: center; color: var(--dim); }
+.hint { margin-left: 8px; letter-spacing: 0.04em; text-transform: none; opacity: 0.7; font-weight: 500; }
 .btn-col { display: flex; flex-direction: column; gap: 8px; }
 .set-list { display: flex; flex-direction: column; gap: 6px; }
 .set { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); font: 500 15px/1 var(--display); text-align: left; }
@@ -201,7 +202,7 @@ svg { display: block; }
 @keyframes fade { from { opacity: 0; } }
 
 /* ---------- toasts ---------- */
-#toast { position: absolute; left: 0; right: 0; top: calc(var(--st) + 70px); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 40; }
+#toast { position: absolute; left: 0; right: 0; top: calc(var(--st) + 70px); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 40; }
 .toast { padding: 10px 14px; border-radius: 10px; background: rgba(12, 18, 32, 0.95); border: 1px solid var(--line-strong); font: 500 13px/1.2 var(--display); max-width: 86%; text-align: center; animation: toast 2.6s both; }
 @keyframes toast { 0% { opacity: 0; transform: translateY(-8px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
