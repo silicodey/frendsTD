@@ -25,6 +25,47 @@ const FROM = arg('from', ''), SECS = +arg('secs', 1e9);
 const STILLS = arg('stills', '') ? String(arg('stills', '')).split(',').map((x) => Math.round(+x * FPS)) : null;
 const GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 
+// Licensed score (Coverr free stock music: free for videos and games, attribution appreciated but not
+// required). The tracks are downloaded at render time into trailer-out/music and never committed.
+// Analysed with librosa: "When All Hope Is Gone" is 144.00 BPM, so atempo 1.04164 puts its beats
+// on the trailer's 150 BPM cut grid; trim starts it on a beat. "Disturbing Night" swells at 30.0 s,
+// which is placed on the closing question.
+const MUSIC = {
+  action: { slug: 'coverr-when-all-hope-is-gone-7Pu0cn', title: 'When All Hope Is Gone', trim: 1.3244, tempo: 1.04164, gain: 0.7 },
+  ending: { slug: '23-disturbing-night-99YEKG', title: 'Disturbing Night', swell: 30.0, gain: 1.5 },
+};
+async function musicFile(m) {
+  const dir = path.join(OUT, 'music');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const ext of ['wav', 'mp3']) { const f = path.join(dir, `${m.slug}.${ext}`); if (fs.existsSync(f) && fs.statSync(f).size > 100000) return f; }
+  try {
+    const r = await fetch(`https://cdn.coverr.co/audios/${m.slug}/preview.mp3`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const f = path.join(dir, `${m.slug}.mp3`);
+    fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
+    console.log(`downloaded "${m.title}" from coverr.co`);
+    return f;
+  } catch (e) { console.log(`could not fetch "${m.title}" (${e.message}); using the synthesized score`); return null; }
+}
+
+/** Mix the licensed tracks under the rendered sound design + gameplay effects. */
+function mixScore(designWav, actionFile, endingFile, marks, total, out) {
+  const A = MUSIC.action, E = MUSIC.ending;
+  const boom = marks['final-boom'], names = marks.names, think = marks['vs-think'], cursor = marks['vs-cursor'];
+  const q = names + 4.0; // the question appears 10 beats into the closing shot
+  const tail = total - names;
+  const graph = [
+    `[1:a]atrim=start=${A.trim},asetpts=PTS-STARTPTS,atempo=${A.tempo},atrim=end=${(boom + 0.15).toFixed(3)},afade=t=in:st=0:d=0.03,` +
+      `volume='if(between(t,${think.toFixed(2)},${cursor.toFixed(2)}),0.22,1)':eval=frame,afade=t=out:st=${boom.toFixed(3)}:d=0.12,volume=${A.gain}[a]`,
+    `[2:a]atrim=start=${(E.swell - (q - names)).toFixed(3)},asetpts=PTS-STARTPTS,atrim=end=${(tail + 0.4).toFixed(3)},afade=t=in:st=0:d=0.5,` +
+      `afade=t=out:st=${(tail - 1.2).toFixed(3)}:d=1.2,volume=${E.gain},adelay=${Math.round(names * 1000)}:all=1[b]`,
+    `[0:a]volume=0.85[c]`,
+    `[c][a][b]amix=inputs=3:normalize=0:duration=first,alimiter=limit=0.89:level=false[out]`,
+  ].join(';');
+  const r = spawnSync('ffmpeg', ['-y', '-i', designWav, '-i', actionFile, '-i', endingFile, '-filter_complex', graph, '-map', '[out]', '-ar', '44100', out], { stdio: ['ignore', 'ignore', 'pipe'] });
+  if (r.status !== 0) { console.error(String(r.stderr).slice(-1500)); process.exit(1); }
+}
+
 async function open(from) {
   const browser = await chromium.launch({ args: GL });
   const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DSF });
@@ -71,9 +112,11 @@ async function film() {
   console.log(`trailer: ${shots.length} shots in ${chunks.length} chunks, ${total} frames (${(total / FPS).toFixed(1)}s) at ${W * DSF}x${H * DSF}`);
 
   // 2. film the missing chunks
-  const todo = chunks.filter((c) => {
+  let todo = chunks.filter((c) => {
     try { const d = JSON.parse(fs.readFileSync(path.join(c.dir, 'done.json'), 'utf8')); return !(d.frames === c.frames && d.w === W * DSF && d.h === H * DSF); } catch { return true; }
   });
+  const audioOnly = process.argv.includes('--audio-only'); // re-render just the soundtrack
+  if (audioOnly) todo = [];
   console.log(`${chunks.length - todo.length} chunks already filmed, ${todo.length} to go`);
   const t0 = Date.now();
   let filmed = 0;
@@ -98,14 +141,25 @@ async function film() {
   };
   await Promise.all(Array.from({ length: Math.max(1, JOBS) }, worker));
 
-  // 3. soundtrack from every chunk's cues
-  const cues = chunks.flatMap((c) => JSON.parse(fs.readFileSync(path.join(c.dir, 'cues.json'), 'utf8')));
+  // 3. soundtrack: gameplay sounds from every chunk's cues + sound design, then the licensed score
+  const cues = chunks.flatMap((c) => { try { return JSON.parse(fs.readFileSync(path.join(c.dir, 'cues.json'), 'utf8')); } catch { return []; } });
+  const actionFile = await musicFile(MUSIC.action), endingFile = actionFile && await musicFile(MUSIC.ending);
+  const licensed = !!(actionFile && endingFile);
   const au = await open('');
-  const b64 = await au.page.evaluate((cs) => window.__trailer.renderAudio(cs), cues);
+  const b64 = await au.page.evaluate(([cs, synth]) => window.__trailer.renderAudio(cs, synth), [cues, !licensed]);
   await au.browser.close();
-  const wav = path.join(OUT, 'soundtrack.wav');
+  let wav = path.join(OUT, 'soundtrack.wav');
   fs.writeFileSync(wav, Buffer.from(b64, 'base64'));
-  console.log(`soundtrack rendered (${cues.length} cues)`);
+  if (licensed) {
+    const marks = {}; let acc = 0;
+    for (const sh of shots) { marks[sh.name] = acc; acc += sh.dur; }
+    const mixed = path.join(OUT, 'soundtrack-mix.wav');
+    mixScore(wav, actionFile, endingFile, marks, acc, mixed);
+    wav = mixed;
+    console.log(`soundtrack: "${MUSIC.action.title}" + "${MUSIC.ending.title}" (coverr.co) over ${cues.length} gameplay cues`);
+  } else console.log(`soundtrack rendered with the synthesized score (${cues.length} cues)`);
+
+  if (audioOnly) { console.log('wrote', wav); return; }
 
   // 4. assemble
   const list = path.join(OUT, 'frames.txt');
