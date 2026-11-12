@@ -228,7 +228,12 @@ svg { display: block; }
 .icon-btn.speed { font-size: 15px; }
 .icon-btn.speed.fast { color: #06101a; background: var(--gold); border-color: var(--gold); }
 
-.banner { position: absolute; left: 0; right: 0; top: 22%; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.bossbar { position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--st) + 62px); width: min(72%, 360px); display: flex; flex-direction: column; align-items: center; gap: 4px; animation: rise 0.4s both; }
+.bossbar span { font: 700 12px/1 var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: #ffd0d8; text-shadow: 0 0 12px rgba(255, 60, 90, 0.9), 0 1px 2px #000; }
+.bb-track { position: relative; width: 100%; height: 10px; border-radius: 5px; background: rgba(10, 4, 8, 0.85); border: 1px solid rgba(255, 77, 106, 0.6); overflow: hidden; box-shadow: 0 0 18px rgba(255, 60, 90, 0.35); }
+.bb-track i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #ff8fa3, #ff2d55 55%, #b3123a); transition: width 0.15s linear; }
+.bb-track em { position: absolute; left: 0; top: 0; height: 3px; background: #7fe0ff; box-shadow: 0 0 6px #5ad1ff; transition: width 0.15s linear; }
+.banner { position: absolute; left: 0; right: 0; top: 24%; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 .banner b { font: 700 44px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: #fff; text-shadow: 0 0 30px rgba(95, 242, 255, 0.8), 0 4px 0 rgba(0, 0, 0, 0.5); }
 .banner i { font: 600 13px/1 var(--display); font-style: normal; letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); text-shadow: 0 1px 6px #000; }
 .banner.boss b { color: #ffd0d8; text-shadow: 0 0 34px rgba(255, 60, 90, 0.95), 0 4px 0 rgba(0, 0, 0, 0.5); }
@@ -279,6 +284,10 @@ svg { display: block; }
 .p-btns .btn svg { font-size: 15px; }
 .btn.maxed { flex: 1.5; color: var(--gold); border-style: dashed; background: none; box-shadow: none; }
 
+@media (min-aspect-ratio: 1/1) {
+  .build { max-width: 440px; width: 100%; margin: 0 auto; }
+  .panel { max-width: 520px; width: 100%; margin: 0 auto; }
+}
 @media (max-width: 359px) {
   .res { padding: 0 8px 0 6px; font-size: 15px; }
   .card .ccost { font-size: 11px; }

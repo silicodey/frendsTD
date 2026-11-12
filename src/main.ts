@@ -62,8 +62,8 @@ class App implements AppApi {
       if (document.hidden && this.mode === 'game' && !this.paused && !this.ended && !this.ui.modalOpen()) { this.setPaused(true); this.ui.pause(); }
     });
     const unlock = () => this.audio.unlock();
-    window.addEventListener('pointerdown', unlock, { passive: true });
-    window.addEventListener('keydown', unlock);
+    // iOS only treats touchend/click as a user gesture for audio, so listen broadly
+    for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) window.addEventListener(ev, unlock, { passive: true });
     this.attract();
     this.ui.title();
     requestAnimationFrame((t) => { this.frame(t); document.getElementById('boot')?.remove(); });
@@ -272,6 +272,8 @@ class App implements AppApi {
       }
       if (!p.moved) return;
       if (this.selCard && !this.paused) {
+        // a sloppy tap must not turn into an aimed placement: require a deliberate slide
+        if (!this.aiming && Math.hypot(p.x - p.sx, p.y - p.sy) < 26) return;
         this.aiming = true;
         this.showGhost(e.clientX, e.clientY - (e.pointerType === 'mouse' ? 0 : 44));
       } else if (this.engine.zoom < 0.99) {
@@ -291,7 +293,7 @@ class App implements AppApi {
         else if (this.selCard) { this.ghostCell.on = false; this.view.setGhost(this.selCard, 0, 0, false, false); }
         return;
       }
-      if (!p.moved && e.type === 'pointerup') this.tap(e.clientX, e.clientY);
+      if ((!p.moved || (this.selCard && Math.hypot(p.x - p.sx, p.y - p.sy) < 26)) && e.type === 'pointerup') this.tap(p.sx, p.sy);
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);

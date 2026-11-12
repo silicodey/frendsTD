@@ -360,6 +360,7 @@ export class UI {
           <button class="icon-btn" data-act="pause" aria-label="Pause">${ICON.pause}</button>
         </div>
       </div>
+      <div class="bossbar" id="h-boss" hidden><span id="h-bossname"></span><div class="bb-track"><i id="h-bosshp"></i><em id="h-bosssh"></em></div></div>
       <div class="banner" id="h-banner" hidden></div>
       <div class="hud-bot">
         <div class="above">
@@ -411,6 +412,18 @@ export class UI {
     this.set('h-wave', 'wave', w, (el) => { el.textContent = `${w}/${sim.waves.length}`; });
     this.set('h-wavebar', 'wavebar', w, (el) => { el.style.width = `${(w / sim.waves.length) * 100}%`; });
     this.set('h-speed', 'speed', speed, (el) => { el.textContent = speed + '×'; el.classList.toggle('fast', speed > 1); });
+
+    // boss health bar
+    let boss = null as Sim['enemies'][number] | null;
+    for (const e of sim.enemies) if (e.def.boss && e.alive && (!boss || e.maxHp > boss.maxHp)) boss = e;
+    this.set('h-boss', 'bossvis', !!boss, (el) => { el.hidden = !boss; });
+    if (boss) {
+      const b = boss;
+      this.set('h-bossname', 'bossname', b.def.name, (el) => { el.textContent = b.def.name; });
+      const hp = Math.round(Math.max(0, b.hp / b.maxHp) * 200) / 2, sh = b.maxShield > 0 ? Math.round((b.shield / b.maxShield) * 100) : 0;
+      this.set('h-bosshp', 'bosshp', hp, (el) => { el.style.width = hp + '%'; });
+      this.set('h-bosssh', 'bosssh', sh, (el) => { el.style.width = sh + '%'; });
+    }
 
     // wave button
     const can = sim.canStartWave();

@@ -725,7 +725,7 @@ export class GameView {
       if (an.hop) y += Math.abs(Math.sin(time * an.bobSpeed * 0.5 + ph * 6.28)) * an.hop * moving;
       const yaw = an.spin ? time * an.spin + ph * 6.28 : Math.atan2(e.dx, e.dz);
       const roll = an.rock ? Math.sin(time * 9 + ph * 6.28) * an.rock * moving : 0;
-      const flash = Math.max(0, 1 - (sim.time - e.hitT) / 0.12) * 0.55;
+      const flash = Math.max(0, 1 - (sim.time - e.hitT) / 0.1) * (e.def.size > 1.5 ? 0.14 : 0.36);
       let r = 1, g = 1, bl = 1;
       if (e.stunT > 0) { r = 1.35; g = 1.3; bl = 0.55; }
       else if (e.slowT > 0) { r = 0.6; g = 0.85; bl = 1.5; }
