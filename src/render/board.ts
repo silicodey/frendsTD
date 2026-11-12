@@ -411,9 +411,6 @@ export class Board {
       disc.position.set(p.x - p.dx * 0.1, 0.42, p.z - p.dz * 0.1);
       disc.rotation.y = ang;
       this.group.add(disc);
-      const l = new THREE.PointLight(hostile, 3, 4.5, 1.6);
-      l.position.set(p.x + p.dx * 0.3, 0.6, p.z + p.dz * 0.3);
-      this.group.add(l);
     }
     const mesh = new THREE.Mesh(this.own(b.build('base')!), this.own(makePbr()));
     mesh.castShadow = true;

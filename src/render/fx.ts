@@ -152,7 +152,8 @@ export class Fx {
     this.boltMesh.count = 0; this.boltMesh.frustumCulled = false; this.boltMesh.renderOrder = 16;
     this.boltMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(900 * 3), 3);
     this.group.add(this.boltMesh);
-    for (let i = 0; i < 4; i++) {
+    // keep the light count fixed (and small): changing it would recompile every lit shader
+    for (let i = 0; i < 2; i++) {
       const l = new THREE.PointLight(0xffffff, 0, 7, 1.6);
       this.group.add(l);
       this.lights.push({ l, t: 1, dur: 1, power: 0 });

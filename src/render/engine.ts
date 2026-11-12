@@ -58,6 +58,7 @@ export class Engine {
   zoom = 1; // user zoom multiplier (smaller = closer)
   pan = new THREE.Vector3();
   elevation = 0.96; // radians from horizontal
+  private fitEl = 0.96;
   azimuth = 0;
   private shakeAmt = 0;
   private shakeOff = new THREE.Vector3();
@@ -143,6 +144,8 @@ export class Engine {
     const cy = (tN + bN) / 2, availY = Math.max(0.2, tN - bN), availX = 1.9;
     const target = this.fitTarget.set(0, 0, 0);
     let dist = 30;
+    const az = this.azimuth;
+    this.azimuth = 0;
     const v = new THREE.Vector3();
     for (let it = 0; it < 24; it++) {
       this.placeCamera(target, dist);
@@ -158,6 +161,8 @@ export class Engine {
       target.z -= (midY - cy) * dist * 0.3 * Math.tan((this.camera.fov * Math.PI) / 360) / 0.287;
     }
     this.fitDist = dist;
+    this.azimuth = az;
+    this.fitEl = this.elevation;
   }
 
   shake(a: number) { this.shakeAmt = Math.min(0.6, this.shakeAmt + a); }
@@ -183,6 +188,7 @@ export class Engine {
     this.time += dt;
     sharedTime.value = this.time;
     // camera
+    if (Math.abs(this.elevation - this.fitEl) > 0.002) this.fit();
     const maxPan = (1 - this.zoom) * 7 + 0.001;
     this.pan.x = THREE.MathUtils.clamp(this.pan.x, -maxPan, maxPan);
     this.pan.z = THREE.MathUtils.clamp(this.pan.z, -maxPan * 1.6, maxPan * 1.6);

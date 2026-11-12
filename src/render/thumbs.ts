@@ -1,12 +1,18 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { FAMILY_INFO, type TowerDef } from '../data/types';
 import { ENEMY_BY_ID } from '../data/enemies';
 import type { Engine } from './engine';
 import { enemyModel } from './enemyModels';
 import { makePbr } from './materials';
 import { TowerVis } from './view';
+
+const S = 384; // internal portrait resolution
+const _vp = new THREE.Vector4();
 
 /**
  * Renders portraits of towers and enemies with the real game renderer (same
@@ -21,6 +27,7 @@ export class Thumbs {
   private canvas = document.createElement('canvas');
   private cache = new Map<string, string>();
   private enemyMat = makePbr();
+  private composer: EffectComposer;
 
   constructor(private engine: Engine) {
     const pm = new THREE.PMREMGenerator(engine.renderer);
@@ -28,9 +35,13 @@ export class Thumbs {
     pm.dispose();
     this.scene.environment = this.env.texture;
     this.scene.environmentIntensity = 0.4;
-    const key = new THREE.DirectionalLight(0xffffff, 1.9); key.position.set(-3, 5, 4); this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0xffffff, 1.5); rim.position.set(4, 2, -5); this.scene.add(rim);
-    this.scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x10141c, 0.6));
+    // Same light counts and fog type as the game scene, so both share one compiled PBR program.
+    const key = new THREE.DirectionalLight(0xffffff, 1.9); key.position.set(-3, 5, 4); key.castShadow = true; key.shadow.mapSize.set(64, 64);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.5); rim.position.set(4, 2, -5);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.25); fill.position.set(3, 1, 5);
+    this.scene.add(key, rim, fill, new THREE.HemisphereLight(0xbfd4ff, 0x10141c, 0.6));
+    for (let i = 0; i < 3; i++) this.scene.add(new THREE.PointLight(0xffffff, 0, 1, 1.6));
+    this.scene.fog = new THREE.FogExp2(0x000000, 0);
     this.backMat = new THREE.ShaderMaterial({
       depthWrite: false, depthTest: false,
       uniforms: { uColor: { value: new THREE.Color() } },
@@ -44,36 +55,35 @@ export class Thumbs {
     this.backdrop = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.backMat);
     this.backdrop.frustumCulled = false; this.backdrop.renderOrder = -100;
     this.scene.add(this.backdrop);
+    const rt = new THREE.WebGLRenderTarget(S, S, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(engine.renderer, rt);
+    this.composer.setPixelRatio(1);
+    this.composer.setSize(S, S);
+    this.composer.addPass(new RenderPass(this.scene, this.cam));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(S, S), 0.3, 0.7, 0.82));
+    this.composer.addPass(new OutputPass());
   }
 
-  private shoot(obj: THREE.Object3D, size: number, color: number, lookY: number, dist: number, rim?: number): string {
-    const e = this.engine;
-    const pass = e.composer.passes[0] as RenderPass;
-    const oldScene = pass.scene, oldCam = pass.camera;
-    const { width, height, dpr } = e;
-    const bloom = e.bloom.strength, vig = e.grade.uniforms.uVignette.value, ab = e.grade.uniforms.uAberration.value;
+  private shoot(obj: THREE.Object3D, size: number, color: number, lookY: number, dist: number): string {
+    const r = this.engine.renderer;
     this.scene.add(obj);
     this.backMat.uniforms.uColor.value.setHex(color);
     this.cam.position.set(dist * 0.62, lookY + dist * 0.52, dist * 0.78);
     this.cam.lookAt(0, lookY, 0);
-    pass.scene = this.scene; pass.camera = this.cam;
-    e.bloom.strength = 0.3; e.grade.uniforms.uVignette.value = 0; e.grade.uniforms.uAberration.value = 0;
-    e.renderer.setPixelRatio(1); e.renderer.setSize(size, size, false);
-    e.composer.setPixelRatio(1); e.composer.setSize(size, size);
-    e.composer.render(0);
+    // Render through a small dedicated composer into the corner of the main canvas, then copy it out.
+    // (Resizing the main composer for every portrait would reallocate all of its render targets.)
+    const pr = r.getPixelRatio();
+    r.getViewport(_vp);
+    r.setViewport(0, 0, S / pr, S / pr);
+    this.composer.render(0);
+    r.setViewport(_vp);
     this.canvas.width = this.canvas.height = size;
     const ctx = this.canvas.getContext('2d')!;
-    ctx.drawImage(e.renderer.domElement, 0, 0, size, size);
-    const url = this.canvas.toDataURL('image/webp', 0.9);
-    // restore
+    ctx.imageSmoothingQuality = 'high';
+    const src = r.domElement;
+    ctx.drawImage(src, 0, src.height - S, S, S, 0, 0, size, size);
     this.scene.remove(obj);
-    pass.scene = oldScene; pass.camera = oldCam;
-    e.bloom.strength = bloom; e.grade.uniforms.uVignette.value = vig; e.grade.uniforms.uAberration.value = ab;
-    e.dpr = dpr;
-    e.renderer.setPixelRatio(dpr); e.renderer.setSize(width, height, false);
-    e.composer.setPixelRatio(dpr); e.composer.setSize(width, height);
-    void rim;
-    return url;
+    return this.canvas.toDataURL('image/webp', 0.9);
   }
 
   tower(def: TowerDef, size = 256): string {
