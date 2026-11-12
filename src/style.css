@@ -143,7 +143,7 @@ svg { display: block; }
 .slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .slot { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .slot img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--fc) 60%, transparent); }
-.slot span { font: 500 10px/1.1 var(--display); text-align: center; color: var(--dim); overflow-wrap: anywhere; }
+.slot span { font: 500 10px/1.2 var(--display); text-align: center; color: var(--dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot.empty { aspect-ratio: 1; border-radius: 10px; border: 1px dashed var(--line-strong); justify-content: center; align-self: start; }
 .slot .x { position: absolute; top: -5px; right: -5px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #1a2338; border: 1px solid var(--line-strong); color: #fff; font-size: 11px; }
 

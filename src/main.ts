@@ -405,6 +405,9 @@ class App implements AppApi {
     this.ui.tip(this.selTower ? null : tips[this.tutStep]);
   }
 
+  /** Dev aid: let the balance bot play the current level with the equipped loadout (`__td.autoplay()`). */
+  autoplay() { if (this.sim && this.mode === 'game') this.bot = new Bot(this.sim, this.save.data.loadout); }
+
   /** Dev aid (not linked from the UI): `__td.gallery('enemies' | 'all' | family)` shows every portrait. */
   gallery(kind: string, cols = 6) {
     const div = document.createElement('div');
@@ -433,7 +436,7 @@ class App implements AppApi {
         this.audio.intensity = 0;
       } else {
         if (!this.paused && !this.ui.modalOpen()) {
-          for (let i = 0; i < this.speed; i++) sim.step(dt);
+          for (let i = 0; i < this.speed; i++) { this.bot?.update(dt); sim.step(dt); }
           simDt = dt * this.speed;
         }
         this.camEl += (0.96 - this.camEl) * Math.min(1, dt * 3);
