@@ -105,6 +105,7 @@ class App implements AppApi {
     this.levelId = id;
     const level = LEVELS[id - 1];
     const sim = new Sim(level);
+    sim.tokens = Math.round((sim.tokens * (1 + this.save.reinforcement(id))) / 10) * 10;
     this.sim = sim; this.bot = null;
     this.mode = 'game'; this.paused = false; this.speed = 1; this.ended = false;
     this.selCard = null; this.selTower = null;
@@ -378,6 +379,7 @@ class App implements AppApi {
     if (won) this.save.data.tutorial = true;
     const n = sim.stars();
     const unlocked = won ? this.save.complete(this.levelId, n) : [];
+    if (!won) this.save.data.fails[this.levelId] = (this.save.data.fails[this.levelId] ?? 0) + 1;
     this.save.write();
     this.endTimer = window.setTimeout(() => {
       if (won) this.audio.win(); else this.audio.lose();
@@ -390,6 +392,16 @@ class App implements AppApi {
     const tips = ['', 'Pick a tower from the bar below.', 'Now tap a glowing tile next to the path.', 'Build a few more, then press Start wave.', 'Tap a placed tower to upgrade or sell it. Hold the Core!'];
     if (this.tutStep === 4) { this.tutT += dt; if (this.tutT > 7) { this.tutStep = 0; this.save.data.tutorial = true; this.save.write(); this.ui.tip(null); return; } }
     this.ui.tip(this.selTower ? null : tips[this.tutStep]);
+  }
+
+  /** Dev aid (not linked from the UI): `__td.gallery('enemies' | 'all' | family)` shows every portrait. */
+  gallery(kind: string, cols = 6) {
+    const div = document.createElement('div');
+    div.style.cssText = `position:fixed;inset:0;overflow:auto;background:#05070d;display:grid;grid-template-columns:repeat(${cols},1fr);gap:6px;padding:6px;z-index:99;align-content:start`;
+    const list = kind === 'enemies' ? ENEMIES.map((e) => [this.thumbs.enemy(e.id, 256), e.name]) : TOWERS.filter((t) => kind === 'all' || t.family === kind).map((t) => [this.thumbs.tower(t, 384), `${t.tier} ${t.name}`]);
+    for (const [url, name] of list) { const c = document.createElement('div'); c.innerHTML = `<img src="${url}" style="width:100%;border-radius:10px;display:block"><div style="color:#fff;font:12px system-ui;text-align:center">${name}</div>`; div.appendChild(c); }
+    document.body.appendChild(div);
+    this.paused = true; this.mode = 'game';
   }
 
   // ------------------------------------------------------------ main loop

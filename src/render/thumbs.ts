@@ -95,8 +95,11 @@ export class Thumbs {
     vis.animate(0.4, 1.3);
     vis.animate(0.3, 1.7);
     vis.group.rotation.y = 0.0;
-    const tall = def.id === 'cl_mythos' ? 0.16 : 0;
-    url = this.shoot(vis.group, size, FAMILY_INFO[def.family].color, 0.5 + tall, 3.5 + tall * 2);
+    // frame by the model's real bounds so every portrait fills its card
+    const box = new THREE.Box3().setFromObject(vis.group);
+    const cy = (box.min.y + box.max.y) / 2, h = box.max.y - box.min.y;
+    const span = Math.max(h, (box.max.x - box.min.x) * 0.95, (box.max.z - box.min.z) * 0.95);
+    url = this.shoot(vis.group, size, FAMILY_INFO[def.family].color, cy - 0.02, 1.15 + span * 1.95);
     vis.dispose();
     this.cache.set(k, url);
     return url;
@@ -112,7 +115,7 @@ export class Thumbs {
     const h = m.height;
     mesh.position.y = m.anim.hover;
     const span = Math.max(h, m.geo.boundingSphere!.radius * 1.5);
-    url = this.shoot(mesh, size, ENEMY_BY_ID[id]?.color ?? 0xff4455, h * 0.5 + m.anim.hover, 1.2 + span * 2.9);
+    url = this.shoot(mesh, size, ENEMY_BY_ID[id]?.color ?? 0xff4455, h * 0.5 + m.anim.hover, 0.85 + span * 2.25);
     this.cache.set(k, url);
     return url;
   }

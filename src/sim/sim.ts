@@ -9,7 +9,7 @@ export const TARGET_MODES: TargetMode[] = ['first', 'strong', 'near', 'last'];
 const BEAM_TICK = 0.2;
 const AURA_TICK = 0.25;
 export const AIR_HEIGHT = 1.5;
-export const BOUNTY_EXP = 0.78;
+export const BOUNTY_EXP = 0.66;
 
 export interface PathData {
   xs: number[]; zs: number[]; cum: number[]; length: number; air: boolean;
@@ -139,18 +139,19 @@ export class Sim {
 
   private makePath(wp: [number, number][], air: boolean): PathData {
     const xs: number[] = [], zs: number[] = [];
-    const R = 0.38;
+    const R = 0.5; // true quarter-circle corners keep the lane a constant width
     for (let i = 0; i < wp.length; i++) {
       const [x, z] = wp[i];
       if (i === 0 || i === wp.length - 1) { xs.push(x); zs.push(z); continue; }
       const [px, pz] = wp[i - 1], [nx, nz] = wp[i + 1];
       const l0 = Math.hypot(x - px, z - pz), l1 = Math.hypot(nx - x, nz - z);
-      const ax = x - ((x - px) / l0) * R, az = z - ((z - pz) / l0) * R;
-      const bx = x + ((nx - x) / l1) * R, bz = z + ((nz - z) / l1) * R;
-      for (let k = 0; k <= 6; k++) {
-        const t = k / 6, u = 1 - t;
-        xs.push(u * u * ax + 2 * u * t * x + t * t * bx);
-        zs.push(u * u * az + 2 * u * t * z + t * t * bz);
+      const d0x = (x - px) / l0, d0z = (z - pz) / l0, d1x = (nx - x) / l1, d1z = (nz - z) / l1;
+      const r = Math.min(R, l0 / 2, l1 / 2);
+      const cx = x - d0x * r + d1x * r, cz = z - d0z * r + d1z * r;
+      for (let k = 0; k <= 8; k++) {
+        const th = (k / 8) * Math.PI * 0.5, co = Math.cos(th), si = Math.sin(th);
+        xs.push(cx + (-d1x * co + d0x * si) * r);
+        zs.push(cz + (-d1z * co + d0z * si) * r);
       }
     }
     const cum = [0];

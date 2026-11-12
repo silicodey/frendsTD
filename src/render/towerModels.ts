@@ -24,11 +24,11 @@ export const KITS: Record<Family, Kit> = {
     trim: { c: 0xd49a4a, m: 1, ro: 0.28 }, glow: { c: 0xff6a2a, e: 3.0 }, glow2: { c: 0xffb84a, e: 2.4 },
   },
   codex: {
-    body: { c: 0x2c3944, m: 0.75, ro: 0.38 }, dark: { c: 0x0f1418, m: 0.8, ro: 0.45 }, accent: { c: 0xb4c2be, m: 0.2, ro: 0.35 },
+    body: { c: 0x52657a, m: 0.7, ro: 0.36 }, dark: { c: 0x1d2730, m: 0.8, ro: 0.42 }, accent: { c: 0xc2d0cc, m: 0.2, ro: 0.35 },
     trim: { c: 0x8c99a6, m: 1, ro: 0.25 }, glow: { c: 0x14e08f, e: 2.6 }, glow2: { c: 0x7dffcf, e: 1.8 },
   },
   grok: {
-    body: { c: 0x14151a, m: 0.9, ro: 0.24 }, dark: { c: 0x24262e, m: 0.8, ro: 0.35 }, accent: { c: 0xc4c4cc, m: 0.3, ro: 0.25 },
+    body: { c: 0x2e3040, m: 0.85, ro: 0.26 }, dark: { c: 0x454858, m: 0.8, ro: 0.32 }, accent: { c: 0xd0d0da, m: 0.3, ro: 0.25 },
     trim: { c: 0xb8b8c4, m: 1, ro: 0.14 }, glow: { c: 0xff1f5a, e: 3.2 }, glow2: { c: 0xff8fb4, e: 2.4 },
   },
 };

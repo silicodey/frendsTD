@@ -115,10 +115,10 @@ const builders: Record<string, (b: Builder) => EnemyAnim> = {
     b.add(box(0.44, 0.04, 0.6), { ...wood, p: [0, 0.14, -0.03] });
     return A({ rock: 0.03 });
   },
-  worm(b) { worm(b, 5, 0.15, { c: 0xb83a78, m: 0.2, ro: 0.4 }, g(0xff7ab8, 2)); return A({ wiggle: [0.07, 9, 7] }); },
-  wormling(b) { worm(b, 3, 0.13, { c: 0xc85a90, m: 0.2, ro: 0.4 }, g(0xff9fd0, 2)); return A({ wiggle: [0.06, 11, 10] }); },
+  worm(b) { worm(b, 5, 0.15, { c: 0x9a2a62, m: 0.25, ro: 0.38 }, g(0xff5aa8, 1.3)); return A({ wiggle: [0.07, 9, 7] }); },
+  wormling(b) { worm(b, 3, 0.13, { c: 0xb04a80, m: 0.25, ro: 0.38 }, g(0xff7ac0, 1.3)); return A({ wiggle: [0.06, 11, 10] }); },
   phantom(b) {
-    b.add(lathe([[0.001, 0.56], [0.12, 0.53], [0.19, 0.42], [0.2, 0.25], [0.17, 0.1], [0.22, 0.0], [0.12, 0.05], [0.001, 0.08]], 14), { c: 0x7a55e0, e: 0.9, ro: 0.3, m: 0.1 });
+    b.add(lathe([[0.001, 0.56], [0.12, 0.53], [0.19, 0.42], [0.2, 0.25], [0.17, 0.1], [0.22, 0.0], [0.12, 0.05], [0.001, 0.08]], 14), { c: 0x7a55e0, e: 0.4, ro: 0.3, m: 0.1 });
     for (const s of [-1, 1]) b.add(sph(0.04, 8, 6), { ...EYEW, p: [s * 0.075, 0.38, 0.165], s: [1, 1.5, 0.6] });
     b.add(sph(0.035, 8, 6), { c: 0x12062a, p: [0, 0.27, 0.185], s: [1.4, 1.8, 0.5] });
     b.add(tor(0.26, 0.012, 5, 24), { ...g(0xb18cff, 2), p: [0, 0.12, 0], r: [P2, 0, 0] });
@@ -187,8 +187,8 @@ const builders: Record<string, (b: Builder) => EnemyAnim> = {
     legs(b, 2, 0.22, 0.12, -0.14, 0.14, { c: 0x2a0a0a, m: 0.5, ro: 0.4 }, 0.14);
     return A({ rock: 0.05 });
   },
-  hydra(b) { worm(b, 6, 0.2, { c: 0x8a1f58, m: 0.35, ro: 0.35 }, g(0xff5fa2, 2.4), 3); return A({ wiggle: [0.05, 5, 4] }); },
-  hydraling(b) { worm(b, 4, 0.17, { c: 0xa8306c, m: 0.3, ro: 0.35 }, g(0xff7ab8, 2.2), 2); return A({ wiggle: [0.06, 7, 6] }); },
+  hydra(b) { worm(b, 6, 0.2, { c: 0x6e1846, m: 0.4, ro: 0.32 }, g(0xff4a94, 1.6), 3); return A({ wiggle: [0.05, 5, 4] }); },
+  hydraling(b) { worm(b, 4, 0.17, { c: 0x8a2658, m: 0.35, ro: 0.33 }, g(0xff62a8, 1.5), 2); return A({ wiggle: [0.06, 7, 6] }); },
   titan(b) {
     const wht: Mat = { c: 0xe9e6f5, m: 0.2, ro: 0.3, flat: true }, drk: Mat = { c: 0x2a1a55, m: 0.7, ro: 0.3, flat: true };
     b.add(lathe([[0.001, 0.5], [0.16, 0.48], [0.26, 0.3], [0.2, 0.12], [0.3, 0], [0.14, 0.04], [0.001, 0.06]], 10), { c: 0x1a1038, m: 0.6, ro: 0.4, flat: true });
@@ -206,7 +206,7 @@ const builders: Record<string, (b: Builder) => EnemyAnim> = {
     return A({ hover: 0.16, bob: 0.05, bobSpeed: 1.6 });
   },
   clip(b) {
-    paperclip(b, 0.55, 0.022, { c: 0xdfe6f0, m: 1, ro: 0.18 }, [0, 0.27, 0], [0, P2, 0.35]);
+    paperclip(b, 0.6, 0.026, { c: 0xdfe6f0, m: 1, ro: 0.18 }, [0, 0.3, 0], [0, 0.7, 0.35]);
     b.add(sph(0.03, 6, 5), { ...EYE, p: [0, 0.4, 0.12] });
     return A({ hop: 0.08, bobSpeed: 14, rock: 0.2 });
   },

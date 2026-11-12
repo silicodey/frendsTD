@@ -13,8 +13,11 @@ import { droneGeometry, towerModel, type TowerModel } from './towerModels';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _v = new THREE.Vector3();
 const FWD = new THREE.Vector3(0, 0, 1);
+const _c2 = new THREE.Color();
 const HOSTILE = 0xff2d55;
 const GOLD = 0xffd166;
+/** Visual-only scale-up so towers and enemies read well on a phone. */
+export const TOWER_SCALE = 1.22, ENEMY_SCALE = 1.2;
 
 const easeOutBack = (t: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
@@ -32,6 +35,8 @@ export class TowerVis {
 
   constructor(public def: TowerDef, shadows = true) {
     const m = (this.model = towerModel(def));
+    _c.setHex(FAMILY_INFO[def.family].color);
+    this.mat.u.uRim.value.set(_c.r, _c.g, _c.b, 0.85);
     const base = new THREE.Mesh(m.base, this.mat);
     base.castShadow = shadows; base.receiveShadow = shadows;
     this.group.add(base);
@@ -122,6 +127,8 @@ export class GameView {
   private cursorMat: THREE.ShaderMaterial;
   private slots: THREE.InstancedMesh;
   private slotMat: THREE.ShaderMaterial;
+  private pads: THREE.InstancedMesh;
+  private padsDirty = true;
   private auras = new Map<number, THREE.Mesh>();
   private auraGeo = new THREE.CircleGeometry(1, 48);
   private ghost: TowerVis | null = null;
@@ -194,7 +201,7 @@ export class GameView {
           vN = normalize(mat3(modelMatrix * instanceMatrix) * normal); vV = normalize(cameraPosition - wp.xyz);
           gl_Position = projectionMatrix * viewMatrix * wp; }`,
       fragmentShader: /* glsl */ `uniform float uTime; varying float vA; varying vec3 vN; varying vec3 vV; varying vec3 vP;
-        void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
+        void main(){ float f = pow(clamp(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0), 2.2);
           float hex = 0.5 + 0.5 * sin(vP.y * 40.0 + uTime * 4.0);
           gl_FragColor = vec4(vec3(0.3, 0.8, 1.0) * (f * 1.6 + hex * 0.08) * vA, 1.0); }`,
     }), 128);
@@ -209,7 +216,7 @@ export class GameView {
         void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0; float a = atan(p.y, p.x);
           float px = 0.045 / uR;
           float edge = smoothstep(px, 0.0, abs(r - (1.0 - px))) * (0.65 + 0.35 * step(0.5, fract(a * 9.55 + uTime * 0.6)));
-          float fill = step(r, 1.0) * (0.05 + 0.05 * smoothstep(0.4, 1.0, r));
+          float fill = step(r, 1.0) * (0.022 + 0.04 * smoothstep(0.4, 1.0, r));
           float sweep = step(r, 1.0) * pow(max(0.0, sin(r * 9.0 - uTime * 3.0)), 14.0) * 0.08;
           gl_FragColor = vec4(uColor * (edge * 1.5 + fill + sweep), 1.0); }`,
     });
@@ -230,6 +237,22 @@ export class GameView {
     this.cursor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.cursorMat);
     this.cursor.rotation.x = -Math.PI / 2; this.cursor.position.y = 0.03; this.cursor.visible = false; this.cursor.renderOrder = 11;
     this.root.add(this.cursor);
+
+    // under-tower pads: soft contact shadow plus a family-coloured ring, in one premultiplied quad
+    this.pads = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; varying vec3 vC; void main(){ vUv = uv; vC = instanceColor; gl_Position = projectionMatrix*viewMatrix*modelMatrix*instanceMatrix*vec4(position,1.0); }',
+      fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vUv; varying vec3 vC;
+        void main(){ float r = length(vUv - 0.5) * 3.0;
+          float ao = smoothstep(1.15, 0.35, r) * 0.6;
+          float ring = smoothstep(0.07, 0.0, abs(r - 0.97)) * (0.75 + 0.25 * sin(uTime * 2.0));
+          float halo = smoothstep(1.45, 0.9, r) * smoothstep(0.5, 0.95, r) * 0.16;
+          gl_FragColor = vec4(vC * (ring * 1.5 + halo), ao); }`,
+    }), 96);
+    this.pads.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(96 * 3), 3);
+    this.pads.count = 0; this.pads.frustumCulled = false; this.pads.renderOrder = 7;
+    this.root.add(this.pads);
 
     // buildable slot markers
     this.slotMat = additive({
@@ -276,6 +299,8 @@ export class GameView {
     geo.setAttribute('iFx', fx);
     const mat = makePbr(true);
     mat.u.uWiggle.value.set(...model.anim.wiggle);
+    _c.setHex(def.color).lerp(_c2.setHex(HOSTILE), 0.55);
+    mat.u.uRim.value.set(_c.r, _c.g, _c.b, 0.5);
     const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
     mesh.count = 0; mesh.frustumCulled = false; mesh.castShadow = true;
@@ -298,7 +323,7 @@ export class GameView {
     this.fx.clear();
     this.board?.dispose();
     this.board = null;
-    this.proj.count = 0; this.drones.count = 0; this.bubbles.count = 0;
+    this.proj.count = 0; this.drones.count = 0; this.bubbles.count = 0; this.pads.count = 0; this.padsDirty = true;
     (this.bars.geometry as THREE.InstancedBufferGeometry).instanceCount = 0;
   }
 
@@ -330,6 +355,7 @@ export class GameView {
       if (defId) {
         this.ghost = new TowerVis(TOWER_BY_ID[defId], false);
         this.ghost.mat.u.uFx.value.y = 0.62;
+        this.ghost.group.scale.setScalar(TOWER_SCALE);
         this.root.add(this.ghost.group);
       }
       this.showSlots(!!defId);
@@ -562,10 +588,11 @@ export class GameView {
         this.root.add(v.group);
         this.towers.set(t.id, v);
         if (t.def.kind === 'aura') this.addAura(t);
+        this.padsDirty = true;
         if (this.slots.visible) this.showSlots(true);
       }
       const age = sim.time - t.born;
-      const sc = (age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1) * (1 + (t.level - 1) * 0.07);
+      const sc = (age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1) * (1 + (t.level - 1) * 0.07) * TOWER_SCALE;
       v.group.scale.setScalar(sc);
       if (v.model.aims && (t.aimX || t.aimZ)) {
         const want = Math.atan2(t.aimX, t.aimZ);
@@ -612,6 +639,7 @@ export class GameView {
       const a = this.auras.get(id);
       if (a) { this.root.remove(a); (a.material as THREE.Material).dispose(); this.auras.delete(id); }
       if (this.selected && this.selected.id === id) this.select(null);
+      this.padsDirty = true;
       if (this.slots.visible) this.showSlots(true);
     }
 
@@ -628,6 +656,21 @@ export class GameView {
       this.cursor.position.set(t.x, 0.03, t.z);
       this.cursorMat.uniforms.uColor.value.setHex(0xffffff);
     } else if (!this.ghostDef) this.cursor.visible = false;
+    if (this.padsDirty) {
+      this.padsDirty = false;
+      let pn = 0;
+      for (const t of sim.towers) {
+        if (pn >= 96) break;
+        _m.makeTranslation(t.x, 0.014, t.z);
+        this.pads.setMatrixAt(pn, _m);
+        this.pads.setColorAt(pn, _c.setHex(FAMILY_INFO[t.def.family].color));
+        pn++;
+      }
+      this.pads.count = pn;
+      this.pads.instanceMatrix.needsUpdate = true;
+      this.pads.instanceColor!.needsUpdate = true;
+    }
+    (this.pads.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
     this.rangeMat.uniforms.uTime.value = time;
     this.cursorMat.uniforms.uTime.value = time;
     this.slotMat.uniforms.uTime.value = time;
@@ -687,19 +730,20 @@ export class GameView {
       if (e.stunT > 0) { r = 1.35; g = 1.3; bl = 0.55; }
       else if (e.slowT > 0) { r = 0.6; g = 0.85; bl = 1.5; }
       else if (e.dotT > 0) { r = 1.5; g = 0.8; bl = 0.55; }
-      put(b, e.x, y, e.z, yaw, roll, 0, e.def.size * grow, flash, e.phased ? 0.28 : 1, ph, r, g, bl);
+      const es = e.def.size * ENEMY_SCALE;
+      put(b, e.x, y, e.z, yaw, roll, 0, es * grow, flash, e.phased ? 0.28 : 1, ph, r, g, bl);
       if (e.dotT > 0 && Math.random() < dt * 10) this.fx.trail(e.x + (Math.random() - 0.5) * 0.2, y + e.def.size * 0.3, e.z + (Math.random() - 0.5) * 0.2, 0xff8a3a, 0.1, 0.4, 1.5);
       if (e.slowT > 0 && Math.random() < dt * 5) this.fx.trail(e.x + (Math.random() - 0.5) * 0.2, y + e.def.size * 0.2, e.z + (Math.random() - 0.5) * 0.2, 0x66b8ff, 0.08, 0.4, 1.2);
-      const top = y + b.model.height * e.def.size + 0.16;
+      const top = y + b.model.height * es + 0.18;
       if ((e.hp < e.maxHp || e.def.boss || e.shield < e.maxShield) && bars < this.healthBarCap && !e.phased) {
         bp[bars * 3] = e.x; bp[bars * 3 + 1] = top; bp[bars * 3 + 2] = e.z;
         bd[bars * 4] = Math.max(0, e.hp / e.maxHp); bd[bars * 4 + 1] = e.maxShield > 0 ? e.shield / e.maxShield : 0;
-        bd[bars * 4 + 2] = e.def.boss ? 1.5 : 0.36 + e.def.size * 0.2; bd[bars * 4 + 3] = e.def.boss ? 1 : 0;
+        bd[bars * 4 + 2] = e.def.boss ? 1.7 : 0.42 + e.def.size * 0.22; bd[bars * 4 + 3] = e.def.boss ? 1 : 0;
         bars++;
       }
       if (e.shield > 1 && bub < 128) {
-        const s = e.def.size * 0.95 + 0.25;
-        _m.compose(_p.set(e.x, y + b.model.height * e.def.size * 0.5, e.z), _q.identity(), _s.setScalar(s));
+        const s = es * 0.95 + 0.25;
+        _m.compose(_p.set(e.x, y + b.model.height * es * 0.5, e.z), _q.identity(), _s.setScalar(s));
         this.bubbles.setMatrixAt(bub, _m);
         (this.bubbleA.array as Float32Array)[bub] = 0.45 + 0.55 * (e.shield / e.maxShield) + Math.max(0, 1 - (sim.time - e.hitT) / 0.15) * 0.8;
         bub++;
@@ -711,7 +755,7 @@ export class GameView {
       gst.t += dt / 0.2;
       if (gst.t >= 1) { this.ghosts.splice(i, 1); continue; }
       const b = this.batch(gst.type);
-      put(b, gst.x, gst.y + b.model.anim.hover + gst.t * 0.15, gst.z, gst.yaw, 0, 0, gst.scale * (1 + gst.t * 0.45), 1.2, 1 - gst.t, 0, 1, 1, 1);
+      put(b, gst.x, gst.y + b.model.anim.hover + gst.t * 0.15, gst.z, gst.yaw, 0, 0, gst.scale * ENEMY_SCALE * (1 + gst.t * 0.45), 1.2, 1 - gst.t, 0, 1, 1, 1);
     }
     for (const b of this.batches.values()) {
       b.mesh.count = b.n;

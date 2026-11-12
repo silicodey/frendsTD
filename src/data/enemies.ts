@@ -4,7 +4,7 @@ export const ENEMIES: EnemyDef[] = [
   { id: 'bug', name: 'Bug', desc: 'Plain old defect. Comes in numbers.', hp: 30, speed: 1.2, armor: 0, bounty: 5, leak: 1, size: 1, color: 0x9be36b },
   { id: 'glitch', name: 'Glitch', desc: 'Fast and fragile. Outruns slow towers.', hp: 18, speed: 2.4, armor: 0, bounty: 5, leak: 1, size: 0.85, color: 0x47f5ff },
   { id: 'spam', name: 'Spam Bot', desc: 'Tiny, weak, and there are always more.', hp: 8, speed: 1.6, armor: 0, bounty: 2, leak: 1, size: 0.6, color: 0xffd166 },
-  { id: 'trojan', name: 'Trojan', desc: 'Heavily armored. Shrugs off weak hits.', hp: 120, speed: 0.75, armor: 4, bounty: 14, leak: 2, size: 1.35, color: 0xc9a227 },
+  { id: 'trojan', name: 'Trojan', desc: 'Heavily armored. Shrugs off weak hits.', hp: 120, speed: 0.75, armor: 3, bounty: 14, leak: 2, size: 1.35, color: 0xc9a227 },
   { id: 'worm', name: 'Worm', desc: 'Splits into three wormlings when destroyed.', hp: 70, speed: 1.0, armor: 0, bounty: 8, leak: 2, size: 1.1, split: { into: 'wormling', n: 3 }, color: 0xff7ab8 },
   { id: 'wormling', name: 'Wormling', desc: 'Quick offspring of a worm.', hp: 18, speed: 1.7, armor: 0, bounty: 2, leak: 1, size: 0.6, color: 0xff9fd0 },
   { id: 'phantom', name: 'Hallucination', desc: 'Phases out of reality — untargetable while faded.', hp: 45, speed: 1.4, armor: 0, bounty: 9, leak: 1, size: 1, phase: { on: 1.2, off: 2.4 }, color: 0xb18cff },
@@ -17,7 +17,7 @@ export const ENEMIES: EnemyDef[] = [
   { id: 'hydraling', name: 'Hydra Head', desc: 'A severed head of the Hydra. Still splits.', hp: 520, speed: 0.8, armor: 2, bounty: 40, leak: 4, size: 1.5, split: { into: 'worm', n: 2 }, color: 0xff7ab8 },
   { id: 'titan', name: 'Deepfake Titan', desc: 'BOSS — massive shield, phases out, jams towers.', hp: 4200, speed: 0.45, armor: 4, shield: 1600, bounty: 300, leak: 10, size: 2.4, boss: true, phase: { on: 1.0, off: 5 }, jam: { range: 3.2, dur: 2.5, cd: 7 }, color: 0x9d7bff },
   { id: 'clip', name: 'Paperclip', desc: 'A tiny paperclip. It only wants more paperclips.', hp: 16, speed: 1.9, armor: 0, bounty: 1, leak: 1, size: 0.55, color: 0xdfe6f0 },
-  { id: 'maximizer', name: 'Paperclip Maximizer', desc: 'FINAL BOSS — converts everything into paperclips. Including you.', hp: 9500, speed: 0.4, armor: 8, bounty: 500, leak: 20, size: 2.7, boss: true, spawn: { type: 'clip', n: 4, cd: 3.2 }, jam: { range: 3.4, dur: 2.5, cd: 8 }, color: 0xe8eef7 },
+  { id: 'maximizer', name: 'Paperclip Maximizer', desc: 'FINAL BOSS — converts everything into paperclips. Including you.', hp: 8200, speed: 0.4, armor: 7, bounty: 500, leak: 20, size: 2.7, boss: true, spawn: { type: 'clip', n: 4, cd: 3.2 }, jam: { range: 3.4, dur: 2.5, cd: 8 }, color: 0xe8eef7 },
 ];
 
 export const ENEMY_BY_ID: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));

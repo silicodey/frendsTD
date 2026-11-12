@@ -5,6 +5,7 @@ export interface PbrUniforms {
   uGlow: { value: number };
   uTime: { value: number };
   uWiggle: { value: THREE.Vector3 }; // amp, freq, speed
+  uRim: { value: THREE.Vector4 }; // rgb + strength: fresnel edge glow that lifts models off the dark board
 }
 
 export const sharedTime = { value: 0 };
@@ -21,6 +22,7 @@ export function makePbr(instanced = false): THREE.MeshStandardMaterial & { u: Pb
     uGlow: { value: 1 },
     uTime: sharedTime,
     uWiggle: { value: new THREE.Vector3(0, 0, 0) },
+    uRim: { value: new THREE.Vector4(0, 0, 0, 0) },
   };
   if (instanced) mat.defines = { ...(mat.defines ?? {}), INST_FX: '' };
   mat.onBeforeCompile = (shader) => {
@@ -54,6 +56,7 @@ export function makePbr(instanced = false): THREE.MeshStandardMaterial & { u: Pb
         varying vec3 vPbr;
         varying vec4 vFx;
         uniform float uGlow;
+        uniform vec4 uRim;
         void main() {
           if (vFx.y < 0.999) {
             float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -64,6 +67,8 @@ export function makePbr(instanced = false): THREE.MeshStandardMaterial & { u: Pb
       .replace('#include <emissivemap_fragment>', /* glsl */ `
         #include <emissivemap_fragment>
         totalEmissiveRadiance = vColor.rgb * vPbr.x * uGlow + vec3(1.0, 0.92, 0.85) * vFx.x;
+        float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.2);
+        totalEmissiveRadiance += uRim.rgb * (uRim.a * rimF);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.25, vFx.w);
         totalEmissiveRadiance *= 1.0 - vFx.w * 0.85;`);
   };

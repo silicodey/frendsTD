@@ -194,7 +194,7 @@ export class UI {
         <div class="eyebrow">Level ${l.id} · ${th.name}</div>
         <h2>${esc(l.name)}</h2>
         <p class="dim">${esc(l.blurb)}</p>
-        <div class="meta-row"><span class="pill">${l.waves} waves</span><span class="pill">${l.paths.length > 1 ? l.paths.length + ' lanes' : '1 lane'}</span><span class="pill">${ICON.token}<b>${l.startTokens}</b></span><span class="stars">${stars(save.data.stars[l.id] ?? 0)}</span></div>
+        <div class="meta-row"><span class="pill">${l.waves} waves</span><span class="pill">${l.paths.length > 1 ? l.paths.length + ' lanes' : '1 lane'}</span><span class="pill">${ICON.token}<b>${Math.round((l.startTokens * (1 + save.reinforcement(l.id))) / 10) * 10}</b></span>${save.reinforcement(l.id) ? `<span class="pill ok">Reinforcements +${Math.round(save.reinforcement(l.id) * 100)}%</span>` : ''}<span class="stars">${stars(save.data.stars[l.id] ?? 0)}</span></div>
         <h3>Threats</h3>
         <div class="threats">${types.map((t) => { const e = ENEMY_BY_ID[t]; return `<div class="threat ${e.boss ? 'boss' : ''}" title="${esc(e.desc)}"><img src="${this.app.thumbs.enemy(t, 128)}" alt=""><span>${esc(e.name)}</span></div>`; }).join('')}</div>
         <h3>Your loadout <button class="link" data-act="armory-from" data-arg="${l.id}">Change</button></h3>
@@ -321,7 +321,7 @@ export class UI {
     this.openModal(`<div class="sheet result ${won ? 'won' : 'lost'}" data-noclose>
       <div class="eyebrow">Level ${l.id} · ${esc(l.name)}</div>
       <h2>${won ? (last ? 'The Core is safe' : 'Victory') : 'Core breached'}</h2>
-      ${won ? `<div class="big-stars">${stars(nStars)}</div>` : `<p class="dim">You held until wave ${sim.waveIdx + 1} of ${sim.waves.length}. Try a different loadout, or upgrade earlier.</p>`}
+      ${won ? `<div class="big-stars">${stars(nStars)}</div>` : `<p class="dim">You held until wave ${sim.waveIdx + 1} of ${sim.waves.length}. Reinforcements are on the way: your next attempt starts with +${Math.round(Math.min(4, (this.app.save.data.fails[levelId] ?? 0)) * 15)}% tokens.</p>`}
       <div class="meta-row center"><span class="pill">${ICON.core}<b>${sim.lives}</b><i>/${sim.maxLives}</i></span><span class="pill">${sim.kills} kills</span><span class="pill">${ICON.token}<b>${sim.earned}</b> earned</span></div>
       ${last ? '<p class="dim">Every world cleared. The Maximizer is paperclips. Thanks for playing, frend.</p>' : ''}
       ${un.length ? `<h3>New towers unlocked</h3><div class="unlocks">${un.map((d) => `<div class="slot" style="--fc:${FAMILY_INFO[d.family].css}"><img src="${this.thumb(d)}" alt=""><span>${esc(d.name)}</span></div>`).join('')}</div>` : ''}

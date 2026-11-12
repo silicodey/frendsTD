@@ -92,6 +92,7 @@ export class Board {
   private coreMat = makePbr();
   private coreFlash = 0;
   private drift: THREE.InstancedMesh | null = null;
+  private driftMat: THREE.ShaderMaterial | null = null;
   private motes!: THREE.Points;
   private moteMat!: THREE.ShaderMaterial;
   private underMat!: THREE.ShaderMaterial;
@@ -151,7 +152,7 @@ export class Board {
   private buildLights() {
     const t = this.theme, g = this.group;
     g.add(new THREE.HemisphereLight(new THREE.Color(t.rim).lerp(new THREE.Color(0xffffff), 0.5), new THREE.Color(t.sky[0]), 0.55));
-    const key = (this.key = new THREE.DirectionalLight(t.key, 2.5));
+    const key = (this.key = new THREE.DirectionalLight(t.key, 3.1));
     key.position.set(-5.5, 13, 6.5);
     key.castShadow = true;
     const s = Math.max(this.sim.cols, this.sim.rows) / 2 + 2.5;
@@ -183,7 +184,7 @@ export class Board {
       const tx = tileTextures(theme.tileAccent, v);
       const mat = this.own(new THREE.MeshStandardMaterial({
         map: tx.map, emissiveMap: tx.emissiveMap, bumpMap: tx.bumpMap, bumpScale: 2.2,
-        emissive: new THREE.Color(theme.tileAccent), emissiveIntensity: 0.9, metalness: 0.45, roughness: 0.5, envMapIntensity: 0.9,
+        emissive: new THREE.Color(theme.tileAccent), emissiveIntensity: 0.5, metalness: 0.4, roughness: 0.52, envMapIntensity: 0.9,
       }));
       this.own(tx.map); this.own(tx.emissiveMap); this.own(tx.bumpMap);
       this.tileMats.push(mat);
@@ -209,9 +210,9 @@ export class Board {
       blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
       uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(this.theme.pathGlow) }, uBoost: { value: 0 } },
-      vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      vertexShader: /* glsl */ `attribute float aCurve; varying vec2 vUv; varying float vCurve; void main(){ vUv = uv; vCurve = aCurve; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime, uBoost; uniform vec3 uColor; varying vec2 vUv;
+        uniform float uTime, uBoost; uniform vec3 uColor; varying vec2 vUv; varying float vCurve;
         void main(){
           float u = vUv.x, v = vUv.y;
           float cu = abs(u - 0.5);
@@ -221,7 +222,8 @@ export class Board {
           float pulse = pow(max(0.0, sin(v * 0.9 - uTime * 2.6)), 12.0) * smoothstep(0.46, 0.2, cu) * (0.35 + uBoost);
           float base = 0.06 * smoothstep(0.5, 0.2, cu);
           float dots = smoothstep(0.03, 0.0, abs(cu - 0.36)) * step(0.5, fract(v * 4.0)) * 0.35;
-          vec3 col = uColor * (edge + arrows + pulse + base + dots);
+          float straight = 1.0 - clamp(vCurve, 0.0, 1.0); // lengthwise patterns shear across corner triangles, so fade them there
+          vec3 col = uColor * (edge + (arrows + dots) * straight + pulse + base);
           gl_FragColor = vec4(col, 1.0);
         }`,
     }));
@@ -245,20 +247,26 @@ export class Board {
     // glowing ribbon(s)
     sim.paths.forEach((p, pi) => {
       const n = p.xs.length;
-      const pos = new Float32Array(n * 6), uv = new Float32Array(n * 4), idx: number[] = [];
-      const W = 0.43;
+      const pos = new Float32Array(n * 6), uv = new Float32Array(n * 4), curve = new Float32Array(n * 2), idx: number[] = [];
+      const W = 0.41;
       for (let i = 0; i < n; i++) {
         const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
         let tx = p.xs[b] - p.xs[a], tz = p.zs[b] - p.zs[a];
         const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
         const y = -0.148 + pi * 0.0008;
         pos.set([p.xs[i] - tz * W, y, p.zs[i] + tx * W, p.xs[i] + tz * W, y, p.zs[i] - tx * W], i * 6);
-        uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
+uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
+        if (i > 0 && i < n - 1) {
+          const ax = p.xs[i] - p.xs[i - 1], az = p.zs[i] - p.zs[i - 1], bx = p.xs[i + 1] - p.xs[i], bz = p.zs[i + 1] - p.zs[i];
+          const turning = Math.abs(ax * bz - az * bx) > 1e-6 || Math.hypot(ax, az) < 1e-6 || Math.hypot(bx, bz) < 1e-6;
+          curve[i * 2] = curve[i * 2 + 1] = turning ? 1 : 0;
+        }
         if (i < n - 1) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
       }
       const g = this.own(new THREE.BufferGeometry());
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      g.setAttribute('aCurve', new THREE.BufferAttribute(curve, 1));
       g.setIndex(idx);
       const mesh = new THREE.Mesh(g, this.pathMat);
       mesh.renderOrder = 1;
@@ -534,16 +542,43 @@ export class Board {
     const rng = mulberry32(sim.level.seed + 7);
     const N = 150;
     const geo = this.own(theme.prop === 'server' ? new THREE.BoxGeometry(1, 1, 1) : theme.prop === 'crystal' ? new THREE.OctahedronGeometry(0.8) : new THREE.DodecahedronGeometry(0.75));
-    const mat = this.own(new THREE.MeshStandardMaterial({
-      color: new THREE.Color(theme.tile).multiplyScalar(0.9), metalness: 0.85, roughness: 0.3, flatShading: theme.prop !== 'server',
-      emissive: new THREE.Color(theme.prop === 'server' ? theme.tileAccent : theme.rim), emissiveIntensity: theme.prop === 'server' ? 0.05 : 0.22,
-    }));
+    const mat: THREE.Material = theme.prop === 'server'
+      ? this.own(new THREE.ShaderMaterial({
+        uniforms: { uBase: { value: new THREE.Color(theme.tile).multiplyScalar(0.7) }, uGlow: { value: new THREE.Color(theme.tileAccent) }, uGlow2: { value: new THREE.Color(theme.rim) }, uFog: { value: new THREE.Color(theme.fog).multiplyScalar(0.55) }, uTime: { value: 0 } },
+        vertexShader: /* glsl */ `varying vec3 vL; varying vec3 vN; varying vec3 vS; varying float vD; varying float vId;
+          void main(){ vL = position; vN = normal; vS = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+            vId = fract(instanceMatrix[3].x * 7.31 + instanceMatrix[3].z * 3.17);
+            vec4 mv = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+        fragmentShader: /* glsl */ `uniform vec3 uBase, uGlow, uGlow2, uFog; uniform float uTime; varying vec3 vL; varying vec3 vN; varying vec3 vS; varying float vD; varying float vId;
+          float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          void main(){
+            vec3 col = uBase * (0.35 + 0.65 * max(0.0, dot(normalize(vN), normalize(vec3(-0.4, 0.8, 0.45)))));
+            if (abs(vN.y) < 0.5) {
+              float side = abs(vN.x) > 0.5 ? vL.z * vS.z : vL.x * vS.x;
+              vec2 cell = vec2(floor(side * 2.2), floor((vL.y + 0.5) * vS.y * 1.6));
+              vec2 f = vec2(fract(side * 2.2), fract((vL.y + 0.5) * vS.y * 1.6));
+              float lit = step(0.52, h21(cell + vId * 91.0)) * (0.6 + 0.4 * sin(uTime * (0.5 + h21(cell) * 2.0) + h21(cell.yx) * 30.0));
+              float win = step(0.2, f.x) * step(f.x, 0.8) * step(0.35, f.y) * step(f.y, 0.7);
+              col += mix(uGlow, uGlow2, step(0.8, h21(cell * 1.7))) * win * lit * 0.9;
+            } else {
+              float e = max(abs(vL.x), abs(vL.z));
+              col += uGlow * smoothstep(0.44, 0.49, e) * 0.9;
+            }
+            float fd = vD * 0.014; float fog = 1.0 - exp(-fd * fd);
+            gl_FragColor = vec4(mix(col, uFog, clamp(fog, 0.0, 1.0)), 1.0);
+          }`,
+      }))
+      : this.own(new THREE.MeshStandardMaterial({
+        color: new THREE.Color(theme.tile).multiplyScalar(0.9), metalness: 0.85, roughness: 0.3, flatShading: true,
+        emissive: new THREE.Color(theme.rim), emissiveIntensity: 0.22,
+      }));
+    this.driftMat = mat instanceof THREE.ShaderMaterial ? mat : null;
     const inst = new THREE.InstancedMesh(geo, mat, N);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
     for (let i = 0; i < N; i++) {
       const a = rng() * PI * 2, d = 11 + rng() * 60;
       p.set(Math.cos(a) * d * 0.9, -4 - rng() * 22 + (d > 30 ? rng() * 14 : 0), Math.sin(a) * d - 6);
-      if (theme.prop === 'server') { e.set(0, rng() * 0.6, 0); s.set(1 + rng() * 3, 2 + rng() * 12, 1 + rng() * 3); }
+      if (theme.prop === 'server') { e.set(0, Math.floor(rng() * 2) * P2, 0); s.set(2 + rng() * 4, 6 + rng() * 18, 2 + rng() * 4); p.set(Math.cos(a) * (9 + d * 0.9), -30 + s.y * 0.5 + rng() * 6, Math.sin(a) * (9 + d * 0.8) - 4); }
       else { e.set(rng() * 6, rng() * 6, rng() * 6); const k = 0.5 + rng() * 2.6; s.set(k, k * (1 + rng() * 1.5), k); }
       m4.compose(p, q.setFromEuler(e), s);
       inst.setMatrixAt(i, m4);
@@ -598,6 +633,7 @@ export class Board {
     this.coreLight.intensity = 4 + Math.sin(time * 2.4) * 0.8 + this.coreFlash * 14;
     this.coreLight.color.setHex(this.coreFlash > 0.05 ? 0xff5566 : 0x5ff2ff);
     if (this.drift) this.drift.rotation.y = time * 0.004;
+    if (this.driftMat) this.driftMat.uniforms.uTime.value = time;
   }
 
   dispose() {

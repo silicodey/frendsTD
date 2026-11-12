@@ -3,13 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "frendsTD — a 3D tower defense where Gemini, Claude, Codex and Grok towers defend the Core.",
+  "description": "frendsTD \u2014 a 3D tower defense where Gemini, Claude, Codex and Grok towers defend the Core.",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node tools/artifact.mjs",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
-    "balance": "tsx tools/balance.ts"
+    "balance": "tsx tools/balance.ts",
+    "trace": "tsx tools/trace.ts"
   },
   "dependencies": {
     "three": "^0.170.0"

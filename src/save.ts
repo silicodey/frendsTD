@@ -9,6 +9,7 @@ export interface SaveData {
   quality: Quality | 'auto';
   tutorial: boolean;
   seen: string[]; // tower ids the player has been shown as unlocked
+  fails: Record<number, number>; // consecutive defeats per level → reinforcements
 }
 
 const KEY = 'frendsTD.save.v1';
@@ -16,7 +17,7 @@ export const LOADOUT_SIZE = 6;
 const DEFAULT_LOADOUT = ['gem_nano', 'cl_haiku', 'cx_autocomplete', 'gk_spark', 'cl_sonnet', 'cx_linter'];
 
 function defaults(): SaveData {
-  return { stars: {}, loadout: [...DEFAULT_LOADOUT], music: true, sfx: true, quality: 'auto', tutorial: false, seen: [] };
+  return { stars: {}, loadout: [...DEFAULT_LOADOUT], music: true, sfx: true, quality: 'auto', tutorial: false, seen: [], fails: {} };
 }
 
 export class Save {
@@ -39,6 +40,9 @@ export class Save {
 
   reset() { this.data = { ...defaults(), music: this.data.music, sfx: this.data.sfx, quality: this.data.quality }; this.write(); }
 
+  /** Bonus starting tokens (fraction) earned by losing a level: +15% per defeat, up to +60%. */
+  reinforcement(levelId: number) { return Math.min(4, this.data.fails[levelId] ?? 0) * 0.15; }
+
   totalStars() { return Object.values(this.data.stars).reduce((a, b) => a + b, 0); }
 
   isUnlocked(id: string) {
@@ -50,6 +54,7 @@ export class Save {
   complete(levelId: number, stars: number): string[] {
     const before = this.totalStars();
     if (stars > (this.data.stars[levelId] ?? 0)) this.data.stars[levelId] = stars;
+    delete this.data.fails[levelId];
     const after = this.totalStars();
     this.write();
     return TOWERS.filter((t) => TIER_UNLOCK[t.tier - 1] > before && TIER_UNLOCK[t.tier - 1] <= after).map((t) => t.id);

@@ -27,59 +27,62 @@ const L = (
   hp: number, threat: number, pool: string[], boss?: string, cols = 9, rows = 14,
 ): LevelDef => ({
   id, name, blurb, world, cols, rows, paths, waves,
-  startTokens: Math.round((70 + 170 * Math.pow(hp, 0.9)) / 10) * 10, lives: 20, hp, threat, pool, boss, seed: id * 7919,
+  startTokens: Math.round(((120 + 200 * Math.pow(hp, 0.9)) * (paths.length > 1 ? 1.3 : 1)) / 10) * 10, lives: 20, hp, threat: 1 + (id - 1) * 0.055 + threat * 0, pool, boss, seed: id * 7919,
 });
 
 export const LEVELS: LevelDef[] = [
   L(1, 'Hello World', 'Your first deployment. Bugs incoming.', 0,
     [[[1, 0], [1, 3], [7, 3], [7, 7], [1, 7], [1, 11], [7, 11], [7, 13]]], 8, 1.0, 1.0, ['bug', 'glitch']),
   L(2, 'Stack Overflow', 'The inbox is filling up with spam.', 0,
-    [[[7, 0], [7, 2], [2, 2], [2, 5], [6, 5], [6, 8], [1, 8], [1, 11], [5, 11], [5, 13]]], 10, 1.15, 1.1, ['bug', 'glitch', 'spam']),
+    [[[7, 0], [7, 2], [2, 2], [2, 5], [6, 5], [6, 8], [1, 8], [1, 11], [5, 11], [5, 13]]], 10, 1.12, 1.1, ['bug', 'glitch', 'spam']),
   L(3, 'Race Condition', 'Two threads, one Core. Armor appears.', 0,
     [
       [[1, 0], [1, 4], [4, 4], [4, 8], [1, 8], [1, 11], [4, 11], [4, 13]],
       [[7, 0], [7, 4], [4, 4], [4, 8], [1, 8], [1, 11], [4, 11], [4, 13]],
-    ], 10, 1.3, 1.2, ['bug', 'glitch', 'spam', 'trojan']),
+    ], 10, 1.25, 1.2, ['bug', 'glitch', 'spam', 'trojan']),
   L(4, 'Memory Leak', 'It spirals inward. Worms multiply.', 0,
-    [[[0, 1], [7, 1], [7, 12], [1, 12], [1, 4], [5, 4], [5, 9], [3, 9], [3, 7]]], 12, 1.45, 1.3, ['bug', 'glitch', 'spam', 'trojan', 'worm']),
+    [[[0, 1], [7, 1], [7, 12], [1, 12], [1, 4], [5, 4], [5, 9], [3, 9], [3, 7]]], 12, 1.4, 1.3, ['bug', 'glitch', 'spam', 'trojan', 'worm']),
   L(5, 'Kernel Panic', 'Something large is in the kernel.', 0,
-    [[[0, 1], [7, 1], [7, 4], [1, 4], [1, 7], [7, 7], [7, 10], [1, 10], [1, 12], [4, 12], [4, 13]]], 12, 1.65, 1.4, ['bug', 'glitch', 'spam', 'trojan', 'worm', 'ransom'], 'hydra'),
+    [[[0, 1], [7, 1], [7, 4], [1, 4], [1, 7], [7, 7], [7, 10], [1, 10], [1, 12], [4, 12], [4, 13]]], 12, 1.55, 1.4, ['bug', 'glitch', 'spam', 'trojan', 'worm', 'ransom'], 'hydra'),
 
   L(6, 'Gradient Descent', 'Step by step, downhill. Things start to fly.', 1,
-    [[[0, 1], [2, 1], [2, 3], [4, 3], [4, 5], [6, 5], [6, 9], [3, 9], [3, 11], [1, 11], [1, 13]]], 12, 1.9, 1.5, ['bug', 'glitch', 'trojan', 'worm', 'phantom', 'drone']),
+    [[[0, 1], [2, 1], [2, 3], [4, 3], [4, 5], [6, 5], [6, 9], [3, 9], [3, 11], [1, 11], [1, 13]]], 12, 1.75, 1.5, ['bug', 'glitch', 'trojan', 'worm', 'phantom', 'drone']),
   L(7, 'Attention Heads', 'Two lanes demand your attention. Shields up.', 1,
     [
       [[0, 2], [3, 2], [3, 6], [1, 6], [1, 10], [4, 10], [4, 13]],
       [[8, 2], [5, 2], [5, 6], [7, 6], [7, 10], [4, 10], [4, 13]],
-    ], 14, 2.2, 1.6, ['glitch', 'spam', 'trojan', 'phantom', 'drone', 'encryptor']),
+    ], 14, 1.85, 1.6, ['glitch', 'spam', 'trojan', 'phantom', 'drone', 'encryptor']),
   L(8, 'Overfit', 'The path crosses itself. So do the healers.', 1,
-    [[[1, 0], [1, 5], [7, 5], [7, 2], [4, 2], [4, 9], [1, 9], [1, 12], [7, 12], [7, 13]]], 14, 2.5, 1.7, ['bug', 'trojan', 'worm', 'phantom', 'encryptor', 'daemon', 'ransom']),
+    [[[1, 0], [1, 5], [7, 5], [7, 2], [4, 2], [4, 9], [1, 9], [1, 12], [7, 12], [7, 13]]], 14, 2.25, 1.7, ['bug', 'trojan', 'worm', 'phantom', 'encryptor', 'daemon', 'ransom']),
   L(9, 'Vanishing Gradient', 'A long way round. Injectors jam your towers.', 1,
-    [[[1, 0], [1, 11], [3, 11], [3, 2], [5, 2], [5, 11], [7, 11], [7, 1]]], 15, 3.0, 1.9, ['glitch', 'spam', 'trojan', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
+    [[[1, 0], [1, 11], [3, 11], [3, 2], [5, 2], [5, 11], [7, 11], [7, 1]]], 15, 2.6, 1.9, ['glitch', 'spam', 'trojan', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
   L(10, 'Mode Collapse', 'Every sample looks the same. One of them is enormous.', 1,
     [
       [[2, 0], [2, 4], [6, 4], [6, 8], [2, 8], [2, 11], [4, 11], [4, 13]],
       [[6, 0], [6, 8], [2, 8], [2, 11], [4, 11], [4, 13]],
-    ], 15, 3.4, 2.0, ['bug', 'glitch', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom'], 'titan'),
+    ], 15, 2.9, 2.0, ['bug', 'glitch', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom'], 'titan'),
 
   L(11, 'Event Loop', 'Round and round toward the center.', 2,
-    [[[4, 0], [4, 2], [7, 2], [7, 10], [1, 10], [1, 4], [4, 4], [4, 7]]], 16, 4.0, 2.1, ['glitch', 'spam', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
+    [[[4, 0], [4, 2], [7, 2], [7, 10], [1, 10], [1, 4], [4, 4], [4, 7]]], 16, 3.3, 2.1, ['glitch', 'spam', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
   L(12, 'Fork Bomb', 'Three entry points. Good luck.', 2,
     [
       [[1, 0], [1, 3], [4, 3], [4, 6], [1, 6], [1, 9], [7, 9], [7, 12], [4, 12], [4, 13]],
       [[7, 0], [7, 3], [4, 3], [4, 6], [1, 6], [1, 9], [7, 9], [7, 12], [4, 12], [4, 13]],
       [[8, 6], [6, 6], [6, 9], [7, 9], [7, 12], [4, 12], [4, 13]],
-    ], 16, 4.6, 2.3, ['bug', 'glitch', 'spam', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
+    ], 16, 3.7, 2.3, ['bug', 'glitch', 'spam', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
   L(13, 'Alignment Problem', 'A very short path. No room for error.', 2,
-    [[[0, 3], [5, 3], [5, 7], [2, 7], [2, 10], [8, 10]]], 18, 4.4, 2.2, ['glitch', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
+    [[[0, 3], [5, 3], [5, 7], [2, 7], [2, 10], [8, 10]]], 18, 3.7, 2.2, ['glitch', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
   L(14, 'Paperclip Factory', 'Two crossing lines. The clips are coming.', 2,
     [
       [[1, 0], [1, 6], [7, 6], [7, 12], [4, 12], [4, 13]],
       [[7, 0], [7, 3], [4, 3], [4, 9], [1, 9], [1, 12], [4, 12], [4, 13]],
-    ], 18, 5.6, 2.5, ['glitch', 'spam', 'clip', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
+    ], 18, 3.8, 2.5, ['glitch', 'spam', 'clip', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom']),
   L(15, 'The Singularity', 'The Maximizer has arrived. Hold the Core.', 2,
-    [[[0, 0], [8, 0], [8, 13], [0, 13], [0, 3], [6, 3], [6, 10], [2, 10], [2, 6], [4, 6], [4, 8]]], 20, 6.2, 2.7, ['glitch', 'spam', 'clip', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom'], 'maximizer'),
+    [[[0, 0], [8, 0], [8, 13], [0, 13], [0, 3], [6, 3], [6, 10], [2, 10], [2, 6], [4, 6], [4, 8]]], 20, 5.0, 2.7, ['glitch', 'spam', 'clip', 'trojan', 'worm', 'phantom', 'drone', 'encryptor', 'daemon', 'injector', 'ransom'], 'maximizer'),
 ];
+
+/** Per-wave enemy HP growth. */
+export const HP_GROWTH = 1.13;
 
 export function mulberry32(a: number): () => number {
   return function () {
@@ -91,8 +94,8 @@ export function mulberry32(a: number): () => number {
 }
 
 const THREAT: Record<string, number> = {
-  bug: 1, glitch: 1.05, spam: 0.36, clip: 0.5, trojan: 3.6, worm: 3.2, phantom: 2.2, encryptor: 3.2,
-  daemon: 3.8, drone: 1.7, injector: 4.2, ransom: 16,
+  bug: 1, glitch: 1.1, spam: 0.5, clip: 0.85, trojan: 4.6, worm: 3.2, phantom: 2.2, encryptor: 3.2,
+  daemon: 3.8, drone: 2.6, injector: 4.2, ransom: 16,
 };
 const GAP: Record<string, number> = {
   bug: 0.62, glitch: 0.48, spam: 0.26, clip: 0.22, trojan: 1.25, worm: 1.1, phantom: 0.85, encryptor: 1.1,
@@ -109,8 +112,10 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
   const hasRansom = level.pool.includes('ransom');
 
   for (let w = 0; w < W; w++) {
-    const hpMult = level.hp * Math.pow(1.115, w);
-    const budget = level.threat * (9 + 3.6 * w + 0.12 * w * w);
+    const hpMult = level.hp * Math.pow(HP_GROWTH, w);
+    // the first waves are a warm-up; multi-lane levels field slightly smaller waves
+    const ramp = [0.6, 0.78, 0.92][w] ?? 1;
+    const budget = level.threat * (8 + 3.2 * w + 0.1 * w * w) * ramp * (nPaths > 1 ? 0.88 : 1);
     // enemy types unlock gradually across the level
     const avail = pool.filter((_, k) => w >= Math.floor((k * level.waves * 0.62) / Math.max(1, pool.length)));
     const groups: WaveGroup[] = [];
@@ -122,7 +127,7 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
       return avail[Math.min(avail.length - 1, Math.floor((1 - r) * avail.length))];
     };
     const add = (type: string, share: number, delay: number, path: number) => {
-      const n = Math.max(1, Math.min(42, Math.round((budget * share) / (THREAT[type] ?? 1))));
+      const n = Math.max(1, Math.min(30, Math.round((budget * share) / (THREAT[type] ?? 1))));
       groups.push({ type, count: n, gap: GAP[type] ?? 0.7, delay, path, hpMult });
       return delay + n * (GAP[type] ?? 0.7);
     };
@@ -153,12 +158,12 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
       groups.push({ type: 'ransom', count: n, gap: 4, delay: 2, path: Math.floor(rng() * nPaths), hpMult });
     }
     if (isBoss) {
-      groups.push({ type: level.boss!, count: 1, gap: 1, delay: 4, path: 0, hpMult: hpMult / level.hp / Math.pow(1.115, w) * bossScale(level) });
+      groups.push({ type: level.boss!, count: 1, gap: 1, delay: 4, path: 0, hpMult: bossScale(level) });
     }
     if (endlessExtra && w >= level.waves && (w - level.waves) % 5 === 4 && level.boss) {
       groups.push({ type: level.boss, count: 1, gap: 1, delay: 3, path: 0, hpMult: bossScale(level) * Math.pow(1.5, (w - level.waves + 1) / 5) });
     }
-    waves.push({ groups, bonus: Math.round((18 + w * 4) * Math.pow(level.hp, 0.8)), boss: isBoss });
+    waves.push({ groups, bonus: Math.round((18 + w * 4) * Math.pow(level.hp, 0.7)), boss: isBoss });
   }
   return waves;
 }

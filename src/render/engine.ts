@@ -27,6 +27,7 @@ const GradeShader = {
       float d2 = dot(c, c);
       vec2 off = c * d2 * uAberration * 6.0;
       vec3 col = min(vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b), vec3(16.0));
+      if (isnan(col.r) || isnan(col.g) || isnan(col.b)) col = vec3(0.0); // never let one bad pixel poison the frame
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(l), col, uSat);
       // gentle filmic contrast in shadows, cool shadows / warm highlights
@@ -85,7 +86,7 @@ export class Engine {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.7, 0.82);
     // clamp bloom input: MSAA-extrapolated speculars on sub-pixel geometry can produce fireflies
     const hp = (this.bloom as unknown as { materialHighPassFilter: THREE.ShaderMaterial }).materialHighPassFilter;
-    hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = min(texture2D( tDiffuse, vUv ), vec4(10.0));');
+    hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = texture2D( tDiffuse, vUv ); if (isnan(texel.r) || isnan(texel.g) || isnan(texel.b)) texel = vec4(0.0); texel = clamp(texel, vec4(0.0), vec4(10.0));');
     hp.needsUpdate = true;
     this.composer.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader);
@@ -137,11 +138,11 @@ export class Engine {
 
   fit() {
     const { cols, rows, top, bottom } = this.bounds;
-    const hx = cols / 2 + 0.35, hz = rows / 2 + 0.35;
+    const hx = cols / 2 + 0.12, hz = rows / 2 + 0.3;
     const pts: THREE.Vector3[] = [];
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { pts.push(new THREE.Vector3(sx * hx, 0, sz * hz)); pts.push(new THREE.Vector3(sx * hx, 1.3, sz * hz)); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { pts.push(new THREE.Vector3(sx * hx, 0, sz * hz)); pts.push(new THREE.Vector3(sx * hx, sz < 0 ? 1.5 : 0.4, sz * hz)); }
     const tN = 1 - (2 * top) / this.height, bN = -1 + (2 * bottom) / this.height; // safe NDC y range
-    const cy = (tN + bN) / 2, availY = Math.max(0.2, tN - bN), availX = 1.9;
+    const cy = (tN + bN) / 2, availY = Math.max(0.2, tN - bN), availX = 1.97;
     const target = this.fitTarget.set(0, 0, 0);
     let dist = 30;
     const az = this.azimuth;
