@@ -15,7 +15,8 @@ import { CELL_BLOCKED, CELL_FREE, Sim, type Enemy, type SimEvent, type Tower } f
  */
 
 type Cam = [number, number, number, number, number, number, number]; // pos xyz, look xyz, fov
-interface Shot { name: string; dur: number; enter?: () => void; update: (t: number, dt: number) => void }
+/** `chain`: the shot continues the previous shot's scene state, so the two must be captured together. */
+interface Shot { name: string; dur: number; chain?: boolean; enter?: () => void; update: (t: number, dt: number) => void }
 interface Bolt { fx: number; fy: number; fz: number; tx: number; ty: number; tz: number; t: number; dur: number; arc: number; color: number; size: number; rocket: boolean; hit: () => void }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
@@ -44,6 +45,7 @@ const BLOCK: Record<Family, [number, number]> = { gemini: [1, 1], claude: [5, 1]
 const BLOCK_ORDER = [[12, 10, 11], [9, 7, 8], [6, 4, 5], [3, 1, 2]].map((r) => [r[1], r[0], r[2]]); // hero (XII) back-centre
 
 type Build = [string, number, number, number?];
+const CARDS: [string, number, number][] = [['gem_veo', 2, 2], ['gk_bigbrain', 4, 5], ['cl_opus', 2, 8], ['cx_swarm', 4, 10]];
 const B_FARM: Build[] = [['gem_flash', 2, 2, 2], ['cl_sonnet', 4, 2, 2], ['gk_tesla', 6, 3, 3], ['cx_mini', 2, 5, 2], ['gem_twin', 4, 6, 2], ['cl_opus', 6, 7, 2], ['gk_raptor', 2, 10, 2], ['cx_linter', 0, 3, 1], ['gk_fun', 4, 10, 2], ['cx_ci', 2, 7, 2], ['gem_banana', 6, 10, 2], ['cl_code', 4, 8, 1], ['gk_meme', 0, 9, 1], ['cx_pr', 6, 5, 1]];
 const B_LATENT: Build[] = [['gem_pro', 2, 5, 2], ['cl_code', 4, 5, 2], ['gk_bigbrain', 6, 4, 2], ['cx_pr', 2, 3, 2], ['gem_veo', 4, 7, 1], ['cl_thinking', 2, 8, 2], ['gk_meme', 6, 8, 2], ['cx_ci', 0, 4, 3], ['cl_mcp', 3, 4, 1], ['gem_vision', 8, 5, 2], ['gk_tesla', 0, 8, 3], ['cx_compiler', 5, 11, 2], ['cl_opus', 3, 12, 2], ['gk_vision', 8, 9, 1]];
 const B_SING: Build[] = [['cl_code', 2, 2, 1], ['gem_deepthink', 5, 4, 1], ['cl_mythos', 2, 7, 1], ['gk_supernova', 8, 2, 1], ['gk_blackhole', 3, 10, 1], ['cx_max', 5, 7, 1], ['cx_swarm', 0, 7, 1], ['gem_twinsuns', 5, 10, 1], ['gk_bigbrain', 2, 4, 1], ['cl_fable', 6, 13, 1], ['gem_constellation', 0, 10, 1], ['gk_heavy', 8, 10, 1]];
@@ -107,6 +109,7 @@ export class Trailer {
   private boss: Enemy | null = null;
   private bossFrac = 1;
   private flags = new Set<string>();
+  private scene = '';
 
   constructor(private engine: Engine, private view: GameView, private manual: boolean, from: string) {
     document.getElementById('ui')!.style.display = 'none';
@@ -130,7 +133,7 @@ export class Trailer {
     this.duration = this.shots.reduce((a, s) => a + s.dur, 0);
     if (from) {
       const i = this.shots.findIndex((s) => s.name === from);
-      if (i > 0) { this.idx = i - 1; this.time = this.shots.slice(0, i).reduce((a, s) => a + s.dur, 0); this.st = 1e9; }
+      if (i > 0) { this.idx = i - 1; this.time = this.shots.slice(0, i).reduce((a, s) => a + s.dur, 0); this.st = 1e9; this.fade = 0; }
     }
     const fonts = (document as Document & { fonts?: { load(f: string): Promise<unknown>; ready: Promise<unknown> } }).fonts;
     const go = () => { this.ready = true; if (!this.manual) { this.last = performance.now(); requestAnimationFrame((t) => this.loop(t)); } };
@@ -151,8 +154,8 @@ export class Trailer {
   advance(dt = 1 / 30, render = true): boolean {
     if (this.done) return true;
     let shot = this.shots[this.idx];
-    if (!shot || this.st >= shot.dur) {
-      this.st = shot && this.st < 1e8 ? this.st - shot.dur : 0;
+    if (!shot || this.st >= shot.dur - 1e-6) {
+      this.st = shot && this.st < 1e8 ? Math.max(0, this.st - shot.dur) : 0;
       this.idx++;
       shot = this.shots[this.idx];
       if (!shot) { this.done = true; return true; }
@@ -172,6 +175,7 @@ export class Trailer {
       }
     }
     this.view.update(dt, sdt);
+    this.engine.damage = 0; // no red "Core hit" vignette in the film
     if (render) this.engine.render(dt); else this.engine.tick(dt);
     this.flashA *= Math.exp(-dt * 14);
     this.flashEl.style.opacity = this.flashA < 0.01 ? '0' : this.flashA.toFixed(3);
@@ -195,7 +199,7 @@ export class Trailer {
   private drop(key: string) { this.els.get(key)?.remove(); this.els.delete(key); }
   private clear() { for (const el of this.els.values()) el.remove(); this.els.clear(); }
 
-  private setCam(c: Cam, roll = 0) { this.cam.pos.set(c[0], c[1], c[2]); this.cam.look.set(c[3], c[4], c[5]); this.cam.fov = c[6]; this.cam.roll = roll; }
+  private setCam(c: Cam, roll = 0) { this.cam.pos.set(c[0], c[1], c[2]); this.cam.look.set(c[3], c[4], c[5]); this.cam.fov = c[6]; this.cam.roll = roll; this.engine.applyCine(); }
   private px(x: number, y: number, z: number) { return this.engine.project(x, y, z, this.v); }
 
   private load(level: LevelDef, theme: Theme, free: 'all' | ((c: number, r: number) => boolean) | null = null): Sim {
@@ -206,9 +210,39 @@ export class Trailer {
       if (sim.grid[i] === CELL_BLOCKED && (free === 'all' || free(c, r))) sim.grid[i] = CELL_FREE;
     }
     this.view.load(sim, theme);
-    this.sim = sim; this.wrap = false; this.boss = null; this.simSpeed = 1; this.bolts.length = 0;
+    this.sim = sim; this.wrap = false; this.boss = null; this.simSpeed = 1; this.bolts.length = 0; this.scene = '';
     return sim;
   }
+
+  /** The stage with all 48 towers; shared by the intro, the family shots and the pull-out. */
+  private showroom() {
+    if (this.scene === 'showroom') return;
+    const sim = this.load(SHOWROOM, STAGE, 'all');
+    for (const f of FAMILIES) {
+      const [c0, r0] = BLOCK[f];
+      const list = TOWERS.filter((t) => t.family === f);
+      BLOCK_ORDER.forEach((row, ri) => row.forEach((tier, ci) => {
+        const t = sim.build(list[tier - 1].id, c0 + ci, r0 + ri);
+        if (t) { t.born = -9; if (tier === 12) this.hero[f] = t; }
+      }));
+    }
+    sim.events.length = 0;
+    this.lane(['trojan', 'bug', 'encryptor', 'bug', 'trojan', 'phantom', 'bug', 'encryptor', 'bug'], 13, 0.85, 4e5);
+    this.warm(3);
+    this.scene = 'showroom';
+  }
+
+  /** A straight lane with the four towers featured on the property cards. */
+  private range() {
+    if (this.scene === 'range') return;
+    this.load(RANGE, THEMES[1], (cc) => cc >= 1 && cc <= 5);
+    this.props = this.place(CARDS.map(([a, b, d]) => [a, b, d, 1] as Build));
+    this.lane(['bug', 'glitch', 'bug', 'spam', 'bug', 'trojan'], 16, 0.7, 260);
+    this.warm(2.5);
+    this.scene = 'range';
+  }
+
+  shotList() { return this.shots.map((s) => ({ name: s.name, dur: s.dur, chain: !!s.chain })); }
 
   private place(list: Build[]) {
     const out: Tower[] = [];
@@ -322,25 +356,14 @@ export class Trailer {
     S.push({
       name: 'intro', dur: 3.0,
       enter: () => {
-        const sim = this.load(SHOWROOM, STAGE, 'all');
-        for (const f of FAMILIES) {
-          const [c0, r0] = BLOCK[f];
-          const list = TOWERS.filter((t) => t.family === f);
-          BLOCK_ORDER.forEach((row, ri) => row.forEach((tier, ci) => {
-            const t = sim.build(list[tier - 1].id, c0 + ci, r0 + ri);
-            if (t) { t.born = -9; if (tier === 12) this.hero[f] = t; }
-          }));
-        }
-        sim.events.length = 0;
-        this.lane(['trojan', 'bug', 'encryptor', 'bug', 'trojan', 'phantom', 'bug', 'encryptor', 'bug'], 13, 0.85, 4e5);
-        this.warm(3);
+        this.showroom();
         this.fade = 1;
       },
       update: (t) => {
-        this.fade = 1 - eo(seg(t, 0.05, 0.9));
+        this.fade = 1 - eo(seg(t, 0.05, 0.9)) + 0.42 * seg(t, 1.15, 1.45); // dim the stage a little behind the logo
         const k = eio(seg(t, 0, 3.0));
         // glide down the lane between the four families
-        this.setCam(mix([1.6, 8.2, -13.5, 0, 0.2, -1.5, 40], [-0.5, 2.5, -3.2, 0.1, 0.9, 5.0, 40], k), (1 - k) * 0.06);
+        this.setCam(mix([1.6, 8.2, -13.5, 0, 0.2, -1.5, 40], [-0.3, 5.0, -6.2, 0, 0.4, 2.0, 40], k), (1 - k) * 0.06);
         this.once('logo', t, 1.15, () => { this.flash('#cfe2ff', 0.85); this.engine.quake(0.5); this.cue('slam'); });
         if (t >= 1.15) {
           const a = back(seg(t, 1.15, 1.6));
@@ -358,16 +381,16 @@ export class Trailer {
       const side = bx < 0 ? -1 : 1;
       const wideA: Cam = [bx + side * 1.4, 9.4, bz + 8.6, bx, 0.3, bz - 0.5, 36];
       const wideB: Cam = [bx + side * 0.5, 7.2, bz + 7.0, bx, 0.4, bz - 0.4, 36];
-      const orbit = (a: number, r: number, h: number): Cam => [hx + Math.sin(a) * r, h, hz - Math.cos(a) * r, hx, 0.95, hz, 31];
+      const orbit = (a: number, r: number, h: number): Cam => [hx + Math.sin(a) * r, h, hz - Math.cos(a) * r, hx, 0.8, hz + 0.25, 35];
       S.push({
         name: 'fam-' + f, dur: 3.2,
-        enter: () => { this.flash(info.css, 0.8); this.fade = 0; },
+        enter: () => { this.showroom(); this.flash(info.css, 0.8); this.fade = 0; },
         update: (t) => {
           let cam: Cam;
           const a0 = -0.95 * side, a1 = 0.55 * side;
           if (t < 1.15) cam = mix(wideA, wideB, eo(seg(t, 0, 1.15)));
-          else if (t < 1.7) cam = mix(wideB, orbit(a0, 3.0, 2.0), eio(seg(t, 1.15, 1.7)));
-          else { const k = seg(t, 1.7, 3.2); cam = orbit(lerp(a0, a1, k * (0.75 + 0.25 * k)), lerp(3.0, 2.5, k) + ei(seg(t, 2.95, 3.2)) * 3, lerp(2.0, 1.5, k) + ei(seg(t, 2.95, 3.2)) * 2.5); }
+          else if (t < 1.7) cam = mix(wideB, orbit(a0, 4.9, 3.0), eio(seg(t, 1.15, 1.7)));
+          else { const k = seg(t, 1.7, 3.2); cam = orbit(lerp(a0, a1, k * (0.75 + 0.25 * k)), lerp(4.9, 4.2, k) + ei(seg(t, 2.95, 3.2)) * 3, lerp(3.0, 2.4, k) + ei(seg(t, 2.95, 3.2)) * 2.5); }
           this.setCam(cam);
           const out = 1 - seg(t, 1.1, 1.35);
           this.title('fam', info.name, '9vh', 17, info.css, eo(seg(t, 0, 0.25)) * out, `transform:scale(${(1.5 - 0.5 * eo(seg(t, 0, 0.35))).toFixed(3)})`, lerp(0.3, 0.04, eo(seg(t, 0, 0.5))));
@@ -387,7 +410,7 @@ export class Trailer {
     // ---------- 3. pull out: all 48 ----------
     S.push({
       name: 'all48', dur: 2.2,
-      enter: () => { this.flash('#ffffff', 0.9); this.cue('slam'); },
+      enter: () => { this.showroom(); this.fade = 0; this.flash('#ffffff', 0.9); this.cue('slam'); },
       update: (t) => {
         const k = eo(seg(t, 0, 2.0));
         this.setCam(mix([1.2, 5.5, 5.5, 0, 0.6, -1.5, 40], [0, 22.5, 12.5, 0, 0, 0.2, 40], k), (1 - k) * 0.12);
@@ -398,27 +421,21 @@ export class Trailer {
     });
 
     // ---------- 4. tower properties ----------
-    const cards: [string, number, number][] = [['gem_veo', 2, 2], ['gk_bigbrain', 4, 5], ['cl_opus', 2, 8], ['cx_swarm', 4, 10]];
-    cards.forEach(([id, c, r], i) => {
+    CARDS.forEach(([id, c, r], i) => {
       const def = TOWER_BY_ID[id];
       const tx = c - 3, tz = r - 5.5, s = tx < 0 ? -1 : 1;
       S.push({
-        name: 'prop-' + i, dur: 1.95,
+        name: 'prop-' + i, dur: 59 / 30,
         enter: () => {
-          if (i === 0) {
-            this.load(RANGE, THEMES[1], (cc) => cc >= 1 && cc <= 5);
-            this.props = this.place(cards.map(([a, b, d]) => [a, b, d, 1] as Build));
-            this.lane(['bug', 'glitch', 'bug', 'spam', 'bug', 'trojan'], 16, 0.7, 260);
-            this.warm(2.5);
-          }
+          this.range();
           this.flash(FAMILY_INFO[def.family].css, 0.75);
           this.view.select(this.props[i] ?? null);
         },
         update: (t) => {
-          const k = seg(t, 0, 1.95);
+          const k = seg(t, 0, 59 / 30);
           const a = lerp(0.55, 0.2, eo(k)) * s;
           const rr = lerp(5.6, 4.9, eo(k));
-          this.setCam([tx + Math.sin(a) * rr, lerp(3.6, 3.0, eo(k)), tz + Math.cos(a) * rr, tx - s * 0.35, -0.55, tz + 0.2, 36]);
+          this.setCam([tx + Math.sin(a) * rr, lerp(3.6, 3.0, eo(k)), tz + Math.cos(a) * rr, tx - s * 0.1, -0.45, tz + 0.2, 36]);
           this.statCard(def, t);
           if (id === 'cl_opus' && this.props[i]) {
             this.once('u1', t, 0.85, () => this.sim.upgrade(this.props[i]));
@@ -431,7 +448,7 @@ export class Trailer {
     // ---------- 5. battle montage ----------
     S.push({
       name: 'battle-farm', dur: 4.2,
-      enter: () => { this.battle(4, B_FARM, 9, 2.2, 15); this.flash('#bfe8ff', 0.9); this.cue('slam'); },
+      enter: () => { this.battle(4, B_FARM, 9, 3.5, 15); this.flash('#bfe8ff', 0.9); this.cue('slam'); },
       update: (t) => {
         const k = eio(seg(t, 0, 4.2));
         this.setCam(mix([-2.5, 21, 15, 0, 0, 0.6, 40], [3.2, 3.4, 7.4, -1.0, 0.4, 0.2, 36], k), (1 - k) * -0.1);
@@ -441,7 +458,7 @@ export class Trailer {
     });
     S.push({
       name: 'battle-latent', dur: 3.8,
-      enter: () => { this.battle(7, B_LATENT, 9, 2.4, 14); this.flash('#f0c8ff', 0.9); this.cue('slam'); },
+      enter: () => { this.battle(7, B_LATENT, 9, 6, 17); this.flash('#f0c8ff', 0.9); this.cue('slam'); },
       update: (t) => {
         const k = seg(t, 0, 3.8), a = lerp(-0.9, 0.5, eio(k));
         this.setCam([Math.sin(a) * 9.5, lerp(3.0, 4.6, k), 1.5 + Math.cos(a) * 9.5, 0, 0.5, 1.2, 38], Math.sin(t * 1.3) * 0.02);
@@ -451,7 +468,7 @@ export class Trailer {
     });
     S.push({
       name: 'battle-sing', dur: 3.8,
-      enter: () => { this.battle(12, B_SING, 12, 2.6, 16); this.flash('#ffd9a8', 0.9); this.cue('slam'); },
+      enter: () => { this.battle(12, B_SING, 12, 5, 17); this.flash('#ffd9a8', 0.9); this.cue('slam'); },
       update: (t) => {
         const k = seg(t, 0, 3.8), a = lerp(0.85, -0.35, eio(k));
         const r = lerp(12.5, 7.2, eio(k));
@@ -479,7 +496,7 @@ export class Trailer {
     const decay = (dt: number) => { wobA *= Math.exp(-dt * 4); wobB *= Math.exp(-dt * 4); rock(this.opus, wobA); rock(this.cmax, wobB); };
 
     S.push({
-      name: 'vs-a', dur: 0.65,
+      name: 'vs-a', dur: 20 / 30,
       enter: () => {
         this.load(ARENA, THEMES[0], 'all');
         const [o, m, u] = this.place([['cl_opus', 3, 6, 3], ['cx_max', 3, 2, 3], ['cl_computer', 5, 6, 2]]);
@@ -497,7 +514,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-b', dur: 0.65,
+      name: 'vs-b', dur: 20 / 30, chain: true,
       enter: () => { this.flash('#2fe8a8', 0.9); this.cue('slam'); },
       update: (t, dt) => {
         aim(); decay(dt);
@@ -508,7 +525,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-c', dur: 0.9,
+      name: 'vs-c', dur: 0.9, chain: true,
       enter: () => { this.flash('#ffffff', 1); this.engine.quake(0.9); this.cue('slam'); },
       update: (t, dt) => {
         aim(); decay(dt);
@@ -519,7 +536,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-opus', dur: 2.3,
+      name: 'vs-opus', dur: 2.3, chain: true,
       enter: () => { this.flash('#ff8f63', 0.5); },
       update: (t, dt) => {
         aim(); decay(dt);
@@ -541,7 +558,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-codex', dur: 2.5,
+      name: 'vs-codex', dur: 2.5, chain: true,
       enter: () => { this.flash('#2fe8a8', 0.6); },
       update: (t, dt) => {
         aim(); decay(dt);
@@ -568,7 +585,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-think', dur: 1.3,
+      name: 'vs-think', dur: 1.3, chain: true,
       enter: () => { this.cue('whoosh'); },
       update: (t, dt) => {
         aim(); decay(dt); wobA = Math.max(wobA, 0.035);
@@ -580,15 +597,15 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-cursor', dur: 2.6,
+      name: 'vs-cursor', dur: 2.6, chain: true,
       enter: () => { this.flash('#ffffff', 0.5); },
       update: (t, dt) => {
         aim(); decay(dt);
         const k = seg(t, 0, 2.6);
-        this.setCam([lerp(4.7, 4.2, k), lerp(4.2, 3.9, k), lerp(7.4, 7.0, k), 0.5, 0.75, 0.1, 37]);
+        this.setCam([lerp(4.7, 4.2, k), lerp(4.2, 3.9, k), lerp(7.4, 7.0, k), 0.5, 1.25, 0.1, 37]);
         bars(!this.flags.has('sold'));
         const from = this.px(C[0] - 0.1, 1.9, C[2]).clone();
-        const btn = this.px(B[0], 3.15, B[2]).clone();
+        const btn = this.px(B[0], 2.95, B[2]).clone();
         const pk = eio(seg(t, 0.55, 1.25));
         const cx = lerp(from.x, btn.x + this.engine.width * 0.07, pk), cy = lerp(from.y, btn.y + this.engine.width * 0.03, pk) - Math.sin(pk * Math.PI) * this.engine.height * 0.06;
         if (!this.flags.has('sold')) {
@@ -606,7 +623,7 @@ export class Trailer {
       },
     });
     S.push({
-      name: 'vs-gg', dur: 0.7,
+      name: 'vs-gg', dur: 0.7, chain: true,
       enter: () => { fx().fountain(A[0], 0.2, A[2], 0xffd166, 40, 4, 0.12, 1.1); this.cue('upgrade'); },
       update: (t, dt) => {
         aim(); wobA = 0; decay(dt);
@@ -650,7 +667,7 @@ export class Trailer {
     });
     let ex = 0, ez = 0;
     S.push({
-      name: 'final-boom', dur: 2.2,
+      name: 'final-boom', dur: 2.2, chain: true,
       enter: () => {
         const b = this.boss;
         ex = b ? b.x : 0; ez = b ? b.z : -6.5;
@@ -714,7 +731,7 @@ export class Trailer {
 
   // ------------------------------------------------------------------ soundtrack
   /** Render the score and every recorded cue into a WAV (base64). Call after the film has run. */
-  async renderAudio(): Promise<string> {
+  async renderAudio(cues: [number, string, number, string][] = this.cues): Promise<string> {
     const rate = 44100;
     const total = this.duration + 0.5;
     const ctx = new OfflineAudioContext(2, Math.ceil(rate * total), rate);
@@ -727,7 +744,7 @@ export class Trailer {
     const at = (name: string) => marks.find((m) => m[1] === name)?.[0] ?? 0;
     const tBattle = at('battle-farm'), tVs = at('vs-a'), tFinal = at('final-boss'), tBoom = at('final-boom'), tAgi = at('agi');
     au.renderMusic(tBoom + 1.9, (t) => (t < at('fam-gemini') ? 0.3 : t < at('prop-0') ? 0.62 : t < tBattle ? 0.5 : t < tVs ? 1 : t < tFinal ? 0.42 : 1), 1.2);
-    for (const [t, kind, a, b] of this.cues) {
+    for (const [t, kind, a, b] of [...cues].sort((x, y) => x[0] - y[0])) {
       au.clock = t;
       switch (kind) {
         case 'shot': au.shot(b, a > 0); break;

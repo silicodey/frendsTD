@@ -170,6 +170,17 @@ export class Engine {
     this.fitEl = this.elevation;
   }
 
+  /** Apply the cinematic camera right away so project()/pick() match the frame about to be drawn. */
+  applyCine() {
+    const c = this.cine;
+    if (!c) return;
+    if (Math.abs(this.camera.fov - c.fov) > 0.001) { this.camera.fov = c.fov; this.camera.updateProjectionMatrix(); }
+    this.camera.position.copy(c.pos);
+    this.camera.up.set(Math.sin(c.roll), Math.cos(c.roll), 0);
+    this.camera.lookAt(c.look);
+    this.camera.updateMatrixWorld(true);
+  }
+
   /** Advance clocks without drawing (used when a capture skips frames). */
   tick(dt: number) { this.time += dt; sharedTime.value = this.time; this.shakeAmt *= Math.exp(-dt * 9); }
 
