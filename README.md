@@ -70,6 +70,25 @@ npm run balance          # the bot plays every level with five different loadout
 npm run trace -- 7 gem_pro,cl_opus,cx_pr,gk_tesla   # wave-by-wave trace of one run
 ```
 
+## Trailer
+
+The trailer is directed inside the game engine (`src/trailer/trailer.ts`): real models, real battles and
+real effects, with a scripted camera, staged scenes and text overlays. Open `/?trailer` to watch it live
+in the browser.
+
+```bash
+npm run dev
+```
+
+```bash
+node tools/trailer.cjs
+```
+
+films it to `trailer-out/frendsTD-trailer.mp4` (1080×1920, 30 fps, with a soundtrack synthesized by the
+game's own audio engine). The film runs on a virtual clock, so every frame is rendered and captured
+exactly once regardless of how fast the machine is; scenes are captured as resumable chunks and
+assembled with ffmpeg. `--stills 4.5,12` renders single moments, `--from <shot> --every 6` makes quick drafts.
+
 ## Performance notes
 
 Enemies are GPU-instanced per type, towers are 2–5 draw calls each, and all effects are pooled. The renderer
