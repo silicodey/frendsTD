@@ -2,10 +2,14 @@
 type Wave = OscillatorType;
 
 export class AudioEngine {
-  private ctx: AudioContext | null = null;
+  ctx: AudioContext | OfflineAudioContext | null = null;
   private master!: GainNode;
-  private sfxBus!: GainNode;
-  private musicBus!: GainNode;
+  sfxBus!: GainNode;
+  musicBus!: GainNode;
+  /** Offline rendering (trailer soundtrack): time comes from `clock` instead of the audio device. */
+  private offline = false;
+  clock = 0;
+  bpmOverride = 0;
   private noiseBuf!: AudioBuffer;
   private last = new Map<string, number>();
   private musicTimer: number | null = null;
@@ -17,12 +21,10 @@ export class AudioEngine {
   intensity = 0; // 0 calm (menus/build) .. 1 combat
   private curIntensity = 0;
 
-  /** Must be called from a user gesture. */
-  unlock() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') void this.ctx.resume(); return; }
-    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    const ctx = (this.ctx = new AC());
+  private now() { return this.offline ? this.clock : this.ctx!.currentTime; }
+
+  private init(ctx: AudioContext | OfflineAudioContext) {
+    this.ctx = ctx;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.2;
     this.master = ctx.createGain(); this.master.gain.value = 0.8;
@@ -33,24 +35,39 @@ export class AudioEngine {
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  }
+
+  /** Must be called from a user gesture. */
+  unlock() {
+    if (this.ctx) { if (!this.offline && this.ctx.state === 'suspended') void (this.ctx as AudioContext).resume(); return; }
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    this.init(new AC());
     this.startMusic();
+  }
+
+  /** Render into an OfflineAudioContext: set `clock`, then call the usual sound methods. */
+  attachOffline(ctx: OfflineAudioContext) {
+    this.offline = true; this.clock = 0; this.sfxOn = true; this.musicOn = true;
+    this.init(ctx);
+    this.last.clear();
   }
 
   setSfx(on: boolean) { this.sfxOn = on; if (this.ctx) this.sfxBus.gain.setTargetAtTime(on ? 0.75 : 0, this.ctx.currentTime, 0.05); }
   setMusic(on: boolean) { this.musicOn = on; if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? 0.5 : 0, this.ctx.currentTime, 0.2); }
-  suspend(s: boolean) { if (!this.ctx) return; if (s) void this.ctx.suspend(); else void this.ctx.resume(); }
+  suspend(s: boolean) { if (!this.ctx || this.offline) return; const c = this.ctx as AudioContext; if (s) void c.suspend(); else void c.resume(); }
 
   private ok(key: string, gap: number) {
-    if (!this.ctx || !this.sfxOn || this.ctx.state !== 'running') return false;
-    const now = this.ctx.currentTime;
+    if (!this.ctx || !this.sfxOn || (!this.offline && this.ctx.state !== 'running')) return false;
+    const now = this.now();
     if (now - (this.last.get(key) ?? -9) < gap) return false;
     this.last.set(key, now);
     return true;
   }
 
-  private tone(type: Wave, f0: number, f1: number, dur: number, vol: number, when = 0, bus: GainNode = this.sfxBus, attack = 0.004) {
+  tone(type: Wave, f0: number, f1: number, dur: number, vol: number, when = 0, bus: GainNode = this.sfxBus, attack = 0.004) {
     const ctx = this.ctx!;
-    const t = ctx.currentTime + when;
+    const t = this.now() + when;
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type;
     o.frequency.setValueAtTime(f0, t);
@@ -62,9 +79,9 @@ export class AudioEngine {
     o.start(t); o.stop(t + dur + 0.02);
   }
 
-  private noise(dur: number, vol: number, f0: number, f1: number, q = 1, when = 0, type: BiquadFilterType = 'bandpass', bus: GainNode = this.sfxBus) {
+  noise(dur: number, vol: number, f0: number, f1: number, q = 1, when = 0, type: BiquadFilterType = 'bandpass', bus: GainNode = this.sfxBus) {
     const ctx = this.ctx!;
-    const t = ctx.currentTime + when;
+    const t = this.now() + when;
     const s = ctx.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
     f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur);
@@ -125,49 +142,61 @@ export class AudioEngine {
       o.connect(filter); o.start(); osc.push(o);
     }
     this.pad = { osc, gain, filter };
-    gain.gain.setTargetAtTime(0.045, ctx.currentTime, 1.5);
-    this.nextBeat = ctx.currentTime + 0.1;
-    this.musicTimer = window.setInterval(() => this.schedule(), 90);
+    gain.gain.setTargetAtTime(0.045, this.now(), this.offline ? 0.4 : 1.5);
+    this.nextBeat = this.now() + 0.1;
+    if (!this.offline) this.musicTimer = window.setInterval(() => this.schedule(), 90);
   }
 
   private schedule() {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
     this.curIntensity += (this.intensity - this.curIntensity) * 0.08;
-    const I = this.curIntensity;
-    const bpm = 96 + I * 26;
+    const now = this.now();
+    if (this.nextBeat < now - 0.5) this.nextBeat = now + 0.05;
+    while (this.nextBeat < now + 0.25) this.playBeat(this.nextBeat - now, this.curIntensity);
+  }
+
+  /** Offline only: lay down the generative score from 0 to `until` seconds, with intensity as a function of time. */
+  renderMusic(until: number, intensityAt: (t: number) => number, fadeOut = 0.6) {
+    if (!this.offline) return;
+    this.clock = 0;
+    this.startMusic();
+    this.nextBeat = 0;
+    while (this.nextBeat < until) this.playBeat(this.nextBeat, intensityAt(this.nextBeat));
+    this.pad?.gain.gain.setTargetAtTime(0, until, fadeOut / 3);
+  }
+
+  private playBeat(t: number, I: number) {
+    const base = this.now();
+    const bpm = this.bpmOverride || 96 + I * 26;
     const step = 60 / bpm / 2; // 8th notes
     // D minor-ish progression: i – VI – III – VII
     const chords = [[146.83, 174.61, 220.0], [116.54, 146.83, 174.61], [174.61, 220.0, 261.63], [130.81, 164.81, 196.0]];
     const scale = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33, 698.46, 783.99];
-    if (this.nextBeat < ctx.currentTime - 0.5) this.nextBeat = ctx.currentTime + 0.05;
-    while (this.nextBeat < ctx.currentTime + 0.25) {
-      const t = this.nextBeat - ctx.currentTime;
-      const b = this.beat;
-      const bar = Math.floor(b / 16) % 4;
-      const ch = chords[bar];
-      if (b % 16 === 0 && this.pad) {
-        this.pad.osc.forEach((o, i) => o.frequency.setTargetAtTime(ch[i % 3] * (i >= 3 ? 2 : 1), ctx.currentTime + t, 0.25));
-        this.pad.filter.frequency.setTargetAtTime(500 + I * 900, ctx.currentTime + t, 0.8);
-      }
-      // bass
-      if (b % 4 === 0 || (I > 0.5 && b % 4 === 2)) this.tone('triangle', ch[0] / 2, ch[0] / 2, step * 1.8, 0.11 + I * 0.05, t, this.musicBus, 0.01);
-      // arp
-      const pat = [0, 2, 4, 2, 5, 4, 2, 7];
-      const on = I > 0.15 ? true : b % 2 === 0;
-      if (on && (b % 8 !== 7)) {
-        const n = scale[(pat[b % 8] + bar * 2) % scale.length] * (b % 32 >= 16 && I > 0.4 ? 2 : 1);
-        this.tone('sine', n, n, step * 1.5, 0.035 + I * 0.03, t, this.musicBus, 0.005);
-        if (I > 0.3) this.tone('triangle', n * 2, n * 2, step * 0.6, 0.012 + I * 0.012, t + step * 0.5, this.musicBus, 0.005);
-      }
-      // drums fade in with combat
-      if (I > 0.25) {
-        if (b % 8 === 0 || b % 16 === 10) this.tone('sine', 120, 42, 0.16, 0.2 * I, t, this.musicBus, 0.002);
-        if (b % 8 === 4) this.noise(0.11, 0.07 * I, 2200, 900, 0.8, t, 'bandpass', this.musicBus);
-        if (b % 2 === 1 || I > 0.7) this.noise(0.03, 0.022 * I, 9000, 7000, 1, t, 'highpass', this.musicBus);
-      }
-      this.beat++;
-      this.nextBeat += step;
+    const b = this.beat;
+    const bar = Math.floor(b / 16) % 4;
+    const ch = chords[bar];
+    if (b % 16 === 0 && this.pad) {
+      this.pad.osc.forEach((o, i) => o.frequency.setTargetAtTime(ch[i % 3] * (i >= 3 ? 2 : 1), base + t, 0.25));
+      this.pad.filter.frequency.setTargetAtTime(500 + I * 900, base + t, 0.8);
     }
+    // bass
+    if (b % 4 === 0 || (I > 0.5 && b % 4 === 2)) this.tone('triangle', ch[0] / 2, ch[0] / 2, step * 1.8, 0.11 + I * 0.05, t, this.musicBus, 0.01);
+    // arp
+    const pat = [0, 2, 4, 2, 5, 4, 2, 7];
+    const on = I > 0.15 ? true : b % 2 === 0;
+    if (on && (b % 8 !== 7)) {
+      const n = scale[(pat[b % 8] + bar * 2) % scale.length] * (b % 32 >= 16 && I > 0.4 ? 2 : 1);
+      this.tone('sine', n, n, step * 1.5, 0.035 + I * 0.03, t, this.musicBus, 0.005);
+      if (I > 0.3) this.tone('triangle', n * 2, n * 2, step * 0.6, 0.012 + I * 0.012, t + step * 0.5, this.musicBus, 0.005);
+    }
+    // drums fade in with combat
+    if (I > 0.25) {
+      if (b % 8 === 0 || b % 16 === 10) this.tone('sine', 120, 42, 0.16, 0.2 * I, t, this.musicBus, 0.002);
+      if (b % 8 === 4) this.noise(0.11, 0.07 * I, 2200, 900, 0.8, t, 'bandpass', this.musicBus);
+      if (b % 2 === 1 || I > 0.7) this.noise(0.03, 0.022 * I, 9000, 7000, 1, t, 'highpass', this.musicBus);
+    }
+    this.beat++;
+    this.nextBeat += step;
   }
 }

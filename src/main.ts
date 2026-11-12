@@ -9,6 +9,7 @@ import { GameView } from './render/view';
 import { Save } from './save';
 import { Bot } from './sim/bot';
 import { Sim, TARGET_MODES, type SimEvent, type Tower } from './sim/sim';
+import { Trailer } from './trailer/trailer';
 import { UI, type AppApi } from './ui/ui';
 
 const TAP_SLOP = 10;
@@ -419,7 +420,11 @@ class App implements AppApi {
   }
 
   // ------------------------------------------------------------ main loop
+  /** Set when something else (the trailer) drives the renderer. */
+  external = false;
+
   private frame(now: number) {
+    if (this.external) return;
     requestAnimationFrame((t) => this.frame(t));
     const raw = (now - this.last) / 1000;
     this.last = now;
@@ -479,3 +484,11 @@ class App implements AppApi {
 
 const app = new App();
 (window as unknown as { __td: App }).__td = app;
+
+// `?trailer` plays the in-engine trailer; `?trailer=capture` waits to be stepped frame by frame (tools/trailer.cjs).
+const tq = new URLSearchParams(location.search);
+if (tq.has('trailer')) {
+  app.external = true;
+  const tr = new Trailer(app.engine, app.view, tq.get('trailer') === 'capture', tq.get('from') ?? '');
+  (window as unknown as { __trailer: Trailer }).__trailer = tr;
+}

@@ -61,6 +61,8 @@ export class Engine {
   elevation = 0.96; // radians from horizontal
   private fitEl = 0.96;
   azimuth = 0;
+  /** Cinematic override (trailer): when set, the camera rig is bypassed. */
+  cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; roll: number } | null = null;
   /** 1 → 0 fly-in when a level opens. */
   intro = 0;
   private shakeAmt = 0;
@@ -168,7 +170,12 @@ export class Engine {
     this.fitEl = this.elevation;
   }
 
+  /** Advance clocks without drawing (used when a capture skips frames). */
+  tick(dt: number) { this.time += dt; sharedTime.value = this.time; this.shakeAmt *= Math.exp(-dt * 9); }
+
   shake(a: number) { this.shakeAmt = Math.min(0.6, this.shakeAmt + a); }
+  /** Uncapped shake for set pieces. */
+  quake(a: number) { this.shakeAmt = Math.max(this.shakeAmt, a); }
 
   /** Convert a screen point (CSS px) to a point on the ground plane y=0. */
   pick(x: number, y: number, out = new THREE.Vector3()): THREE.Vector3 | null {
@@ -191,6 +198,16 @@ export class Engine {
     this.time += dt;
     sharedTime.value = this.time;
     // camera
+    if (this.cine) {
+      const c = this.cine;
+      if (Math.abs(this.camera.fov - c.fov) > 0.001) { this.camera.fov = c.fov; this.camera.updateProjectionMatrix(); }
+      this.camera.position.copy(c.pos);
+      this.camera.up.set(Math.sin(c.roll), Math.cos(c.roll), 0);
+      this.camera.lookAt(c.look);
+      this.camera.updateMatrixWorld(true);
+    } else {
+    this.camera.up.set(0, 1, 0);
+    if (this.camera.fov !== 32) { this.camera.fov = 32; this.camera.updateProjectionMatrix(); }
     if (Math.abs(this.elevation - this.fitEl) > 0.002) this.fit();
     const maxPan = (1 - this.zoom) * 7 + 0.001;
     this.pan.x = THREE.MathUtils.clamp(this.pan.x, -maxPan, maxPan);
@@ -206,6 +223,7 @@ export class Engine {
       this.placeCamera(this.target, this.fitDist * this.zoom * (1 + k * 0.55));
       this.elevation = el; this.azimuth = az;
     } else this.placeCamera(this.target, this.fitDist * this.zoom);
+    }
     if (this.shakeAmt > 0.001) {
       const t = this.time * 47;
       this.shakeOff.set(Math.sin(t * 1.3) + Math.sin(t * 2.9) * 0.5, Math.sin(t * 1.7 + 1) + Math.sin(t * 3.7) * 0.5, 0).multiplyScalar(this.shakeAmt * 0.35);
