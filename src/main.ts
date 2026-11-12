@@ -42,6 +42,7 @@ class App implements AppApi {
   private tutStep = 0;
   private tutT = 0;
   private camEl = 0.96;
+  private celebrate = 0;
   private canvas: HTMLCanvasElement;
 
   constructor() {
@@ -112,7 +113,8 @@ class App implements AppApi {
     clearTimeout(this.endTimer);
     this.view.load(sim, THEMES[level.world]);
     this.applySettings();
-    this.engine.zoom = 1; this.engine.pan.set(0, 0, 0); this.engine.azimuth = 0;
+    this.engine.zoom = 1; this.engine.pan.set(0, 0, 0); this.engine.azimuth = 0; this.engine.intro = 1;
+    this.camEl = 0.96;
     this.ui.hudShow(sim);
     this.resize();
     this.tutStep = id === 1 && !this.save.data.tutorial ? 1 : 0;
@@ -381,6 +383,7 @@ class App implements AppApi {
     const unlocked = won ? this.save.complete(this.levelId, n) : [];
     if (!won) this.save.data.fails[this.levelId] = (this.save.data.fails[this.levelId] ?? 0) + 1;
     this.save.write();
+    if (won) this.celebrate = 3.2;
     this.endTimer = window.setTimeout(() => {
       if (won) this.audio.win(); else this.audio.lose();
       this.ui.result(won, this.levelId, n, sim, unlocked, (i) => this.audio.star(i));
@@ -429,6 +432,20 @@ class App implements AppApi {
         this.audio.intensity = this.ended ? 0.1 : sim.state === 'wave' ? (sim.enemies.some((x) => x.def.boss) ? 1 : 0.8) : 0.3;
         if (simDt > 0) for (const t of sim.towers) if (t.def.kind === 'beam' && t.targets.length) { this.audio.beam(t.def.family); break; }
         this.tutorial(dt);
+        if (this.celebrate > 0) {
+          // victory fireworks over the board
+          this.celebrate -= dt;
+          if (Math.random() < dt * 9) {
+            const fx = this.view.fx, cols = [0x5b9bff, 0xff8f63, 0x2fe8a8, 0xff3d7a, 0xffd166];
+            const x = (Math.random() - 0.5) * sim.cols, z = (Math.random() - 0.5) * sim.rows, y = 1.6 + Math.random() * 2.2;
+            const c = cols[Math.floor(Math.random() * cols.length)];
+            fx.burst(x, y, z, c, 34, 4.2, 0.13, 1.1, 2.2, 0.1, 2.4);
+            fx.flash(x, y, z, c, 2.4, 0.3, 1.4);
+            fx.light(x, y, z, c, 6, 0.4);
+            this.audio.pop(0.7 + Math.random());
+          }
+          e.azimuth = Math.sin((3.2 - this.celebrate) * 0.5) * 0.25;
+        }
         if (this.selTower && sim.towers.indexOf(this.selTower) < 0) this.selectTower(null);
         this.ui.hudUpdate(sim, this.selCard, this.selTower, this.speed);
       }

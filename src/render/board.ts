@@ -569,8 +569,8 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
           }`,
       }))
       : this.own(new THREE.MeshStandardMaterial({
-        color: new THREE.Color(theme.tile).multiplyScalar(0.9), metalness: 0.85, roughness: 0.3, flatShading: true,
-        emissive: new THREE.Color(theme.rim), emissiveIntensity: 0.22,
+        color: new THREE.Color(theme.tile).multiplyScalar(0.55), metalness: 0.9, roughness: 0.25, flatShading: true,
+        emissive: new THREE.Color(theme.rim), emissiveIntensity: 0.07,
       }));
     this.driftMat = mat instanceof THREE.ShaderMaterial ? mat : null;
     const inst = new THREE.InstancedMesh(geo, mat, N);
@@ -579,7 +579,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
       const a = rng() * PI * 2, d = 11 + rng() * 60;
       p.set(Math.cos(a) * d * 0.9, -4 - rng() * 22 + (d > 30 ? rng() * 14 : 0), Math.sin(a) * d - 6);
       if (theme.prop === 'server') { e.set(0, Math.floor(rng() * 2) * P2, 0); s.set(2 + rng() * 4, 6 + rng() * 18, 2 + rng() * 4); p.set(Math.cos(a) * (9 + d * 0.9), -30 + s.y * 0.5 + rng() * 6, Math.sin(a) * (9 + d * 0.8) - 4); }
-      else { e.set(rng() * 6, rng() * 6, rng() * 6); const k = 0.5 + rng() * 2.6; s.set(k, k * (1 + rng() * 1.5), k); }
+      else { e.set(rng() * 6, rng() * 6, rng() * 6); const k = 0.35 + rng() * 1.5; s.set(k, k * (1 + rng() * 1.8), k); p.set(Math.cos(a) * (10 + d * 0.8), -7 - rng() * 20, Math.sin(a) * (10 + d * 0.8) - 4); }
       m4.compose(p, q.setFromEuler(e), s);
       inst.setMatrixAt(i, m4);
     }

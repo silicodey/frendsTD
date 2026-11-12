@@ -61,6 +61,8 @@ export class Engine {
   elevation = 0.96; // radians from horizontal
   private fitEl = 0.96;
   azimuth = 0;
+  /** 1 → 0 fly-in when a level opens. */
+  intro = 0;
   private shakeAmt = 0;
   private shakeOff = new THREE.Vector3();
   private camPos = new THREE.Vector3();
@@ -194,7 +196,16 @@ export class Engine {
     this.pan.x = THREE.MathUtils.clamp(this.pan.x, -maxPan, maxPan);
     this.pan.z = THREE.MathUtils.clamp(this.pan.z, -maxPan * 1.6, maxPan * 1.6);
     this.target.copy(this.fitTarget).add(this.pan);
-    this.placeCamera(this.target, this.fitDist * this.zoom);
+    if (this.intro > 0.001) {
+      this.intro = Math.max(0, this.intro - dt * 0.9);
+      const k = this.intro * this.intro * (3 - 2 * this.intro); // smoothstep
+      const el = this.elevation;
+      this.elevation = el - k * 0.42;
+      const az = this.azimuth;
+      this.azimuth = az + k * 0.55;
+      this.placeCamera(this.target, this.fitDist * this.zoom * (1 + k * 0.55));
+      this.elevation = el; this.azimuth = az;
+    } else this.placeCamera(this.target, this.fitDist * this.zoom);
     if (this.shakeAmt > 0.001) {
       const t = this.time * 47;
       this.shakeOff.set(Math.sin(t * 1.3) + Math.sin(t * 2.9) * 0.5, Math.sin(t * 1.7 + 1) + Math.sin(t * 3.7) * 0.5, 0).multiplyScalar(this.shakeAmt * 0.35);
