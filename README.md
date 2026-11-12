@@ -89,6 +89,12 @@ game's own audio engine). The film runs on a virtual clock, so every frame is re
 exactly once regardless of how fast the machine is; scenes are captured as resumable chunks and
 assembled with ffmpeg. `--stills 4.5,12` renders single moments, `--from <shot> --every 6` makes quick drafts.
 
+The trailer is scored with two tracks from [Coverr's free stock music](https://coverr.co/free-stock-music)
+(free for videos, attribution appreciated): **"When All Hope Is Gone"**, time-stretched from 144 to
+150 BPM so the cuts land on its beats, and **"Disturbing Night"** for the ending. They are downloaded
+at render time and not committed; without network access the tool falls back to a synthesized score
+(`src/trailer/score.ts`). `--audio-only` re-renders just the soundtrack from already-filmed scenes.
+
 ## Performance notes
 
 Enemies are GPU-instanced per type, towers are 2–5 draw calls each, and all effects are pooled. The renderer
