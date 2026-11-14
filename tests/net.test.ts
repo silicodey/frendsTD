@@ -9,6 +9,7 @@ import {
   type ClientMsg, type ServerMsg, type TimedCmd,
 } from '../src/net/protocol';
 import { startServer } from '../server/index';
+import { THEMES } from '../src/data/levels';
 
 const deck = STARTER_DECK.map((id) => ({ id, level: startLevel(id) + 2, talents: [-1, -1, -1, -1] }));
 const setup = (name: string): PlayerSetup => ({ name, deck: deck.map((c) => ({ ...c })), elo: 0 });
@@ -170,6 +171,7 @@ test('server: create, join, ready, countdown, play in lockstep, forfeit', async 
     assert.equal(sa.info.seed, sb.info.seed);
     assert.equal(sa.info.startAt, sb.info.startAt);
     assert.deepEqual(sa.info.setups.map((s) => s.name), ['Ada', 'Bo']);
+    assert.ok(THEMES[sa.info.theme], `theme ${sa.info.theme} exists`);
     // a third player cannot join a full room
     const c = new Client(url); await c.open();
     c.send({ t: 'hello', proto: PROTO, name: 'Cy', deck }); c.send({ t: 'join', code: room.code });

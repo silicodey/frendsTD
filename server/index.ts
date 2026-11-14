@@ -18,13 +18,13 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PvpMatch, type DeckCard } from '../src/pvp/match';
+import { THEMES } from '../src/data/levels';
 import {
   COUNTDOWN_MS, HASH_EVERY, INPUT_DELAY, Lockstep, PROTO, RECONNECT_GRACE_MS, TICK_MS,
   cleanCmd, cleanCode, cleanDeck, cleanName, matchHash, randomCode,
   type ClientMsg, type LobbyPlayer, type ServerMsg, type StartInfo, type TimedCmd,
 } from '../src/net/protocol';
 
-const DUEL_THEMES = [0, 1, 2, 3, 4, 5];
 const MAX_ROOMS = 1000;
 const CMD_BURST = 20; // commands per player per second
 
@@ -136,7 +136,7 @@ export function startServer(opts: ServerOptions = {}) {
     if (r.state !== 'lobby' || !r.seats.every((s) => s && s.ready && s.conn)) return;
     const [a, b] = r.seats as Seat[];
     const info: StartInfo = {
-      startAt: Math.round(now() + (opts.countdownMs ?? COUNTDOWN_MS)), seed: randomInt(1, 0x7fffffff), theme: DUEL_THEMES[randomInt(DUEL_THEMES.length)],
+      startAt: Math.round(now() + (opts.countdownMs ?? COUNTDOWN_MS)), seed: randomInt(1, 0x7fffffff), theme: randomInt(THEMES.length),
       setups: [{ name: a.name, deck: a.deck, elo: 0 }, { name: b.name, deck: b.deck, elo: 0 }],
     };
     r.state = 'countdown'; r.info = info;

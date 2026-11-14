@@ -60,6 +60,7 @@ export class Duel {
   readonly me: number;
   readonly foe: number;
   private lock: Lockstep | null = null;
+  private apT = 0;
   private net: OnlineSession | null = null;
 
   constructor(private host: DuelHost, public opts: DuelOptions) {
@@ -75,7 +76,7 @@ export class Duel {
     if (opts.mode === 'ranked' || opts.mode === 'practice') this.bot = new PvpBot(this.match, 1, opts.rivalSkill, opts.seed);
     host.setSim(this.match.sim);
     host.view.mySide = this.me;
-    host.view.load(this.match.sim, THEMES[opts.theme]);
+    host.view.load(this.match.sim, THEMES[opts.theme] ?? THEMES[0]);
     host.view.dimOthers = true;
     host.view.showAllGains = opts.mode === 'local';
     this.root = document.createElement('div');
@@ -352,7 +353,7 @@ export class Duel {
   update(dt: number): number {
     const m = this.match;
     let simDt = 0;
-    if (this.net) simDt = this.stepOnline();
+    if (this.net) simDt = this.stepOnline(dt);
     else if (!this.paused && !m.ended) {
       for (let i = 0; i < this.speed; i++) {
         this.bot?.update(dt);
@@ -389,9 +390,14 @@ export class Duel {
   }
 
   /** Simulate up to the tick the clock says, but never past what the server has confirmed. */
-  private stepOnline(): number {
+  private stepOnline(dt: number): number {
     const net = this.net!, lock = this.lock!, m = this.match;
-    if (net.clockTick() >= 0 && !m.ended) this.autopilot?.update(1 / 60);
+    if (this.autopilot && net.clockTick() >= 0 && !m.ended) {
+      // the test autopilot keeps wall-clock pace even when frames are slow (the match itself runs on the shared clock)
+      const t = performance.now();
+      this.autopilot.update(this.apT ? Math.min(1, (t - this.apT) / 1000) : dt);
+      this.apT = t;
+    }
     const r = net.result;
     // the referee says it is over but we have not got there (only possible after a divergence): end it here
     if (r && !m.ended && lock.tick >= r.tick + 30) { m.ended = true; m.winner = r.winner; m.events.push({ t: 'end', side: r.winner }); }

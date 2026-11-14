@@ -210,7 +210,8 @@ export class OnlineSession {
         if (this.samples.length > 10) this.samples.shift();
         const best = this.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a));
         this.offset = best.off;
-        this.rtt = Math.round(this.samples.slice(-3).reduce((a, b) => a + b.rtt, 0) / Math.min(3, this.samples.length));
+        // the network's round trip, not the page being busy: the best of the last few
+        this.rtt = Math.round(Math.min(...this.samples.slice(-5).map((x) => x.rtt)));
         break;
       }
       case 'error':
