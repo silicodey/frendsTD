@@ -161,7 +161,8 @@ export const SELL_REFUND = 0.7;
 /** Approximate sustained single-target DPS, for UI bars. */
 export function approxDps(def: TowerDef, level = 1): number {
   const s = statsAt(def, level);
-  let d = s.dmg * s.rate;
+  // beams and auras store damage per second; everything else stores damage per attack
+  let d = def.kind === 'beam' || def.kind === 'aura' ? s.dmg : s.dmg * s.rate;
   if (def.burst) d *= def.burst;
   if (def.targets) d *= def.targets;
   if (def.drones) d *= def.drones;

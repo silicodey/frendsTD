@@ -3,7 +3,7 @@ import { ENEMY_BY_ID } from '../data/enemies';
 import { buildWaves, mulberry32 } from '../data/levels';
 import { MAX_LEVEL, SELL_REFUND, TOWER_BY_ID, investedAt, statsAt, upgradeCost, type TowerStats } from '../data/towers';
 
-export const CELL_FREE = 0, CELL_PATH = 1, CELL_BLOCKED = 2, CELL_PORTAL = 3, CELL_CORE = 4;
+export const CELL_FREE = 0, CELL_PATH = 1, CELL_BLOCKED = 2, CELL_PORTAL = 3, CELL_CORE = 4, CELL_VOID = 5;
 export type TargetMode = 'first' | 'strong' | 'near' | 'last';
 export const TARGET_MODES: TargetMode[] = ['first', 'strong', 'near', 'last'];
 const BEAM_TICK = 0.2;
@@ -21,6 +21,10 @@ export interface Enemy {
   slowPct: number; slowT: number; stunT: number; dotDps: number; dotT: number; dotSrc: Tower | null; vuln: number; vulnT: number;
   phaseT: number; phased: boolean; healT: number; jamT: number; spawnT: number; alive: boolean; bounty: number;
   hpMult: number; air: boolean; born: number; hitT: number; seg: number;
+  /** Speed multiplier (duels walk a short lane, so they slow everyone down). */
+  spd?: number;
+  /** Duels: crowd-control immunity timers (after a stun / pull the enemy shrugs off the next one for a moment). */
+  stunRes?: number; pullRes?: number;
 }
 
 export interface Drone { x: number; z: number; ang: number; cd: number; target: Enemy | null }
@@ -31,6 +35,8 @@ export interface Tower {
   targets: Enemy[]; rampTs: number[]; tickT: number; spin: number; jamT: number;
   buffDmg: number; buffRate: number; buffRange: number; buffCrit: number;
   stats: TowerStats; drones: Drone[]; kills: number; dmgDone: number; shotT: number; born: number;
+  /** PvP: which player owns it, its merge rank (1–7) and free-form per-match state. */
+  side: number; rank: number; ext: Record<string, number>;
 }
 
 export interface Projectile {
@@ -78,6 +84,11 @@ export class Sim {
   rng: () => number;
   portal: { c: number; r: number; x: number; z: number; dx: number; dz: number }[] = [];
   core = { c: 0, r: 0, x: 0, z: 0 };
+  cores: { c: number; r: number; x: number; z: number }[] = [];
+  /** PvP: each tower only sees enemies on its own lane (enemy.pathIdx === tower.side). */
+  sided = false;
+  /** PvP: replaces the campaign stat table (rank, power-ups, card level, talents). */
+  statFn: ((t: Tower) => TowerStats) | null = null;
 
   constructor(level: LevelDef) {
     this.level = level;
@@ -118,6 +129,7 @@ export class Sim {
       const [cc, cr] = wp[wp.length - 1];
       grid[cr * cols + cc] = CELL_CORE;
       this.core = { c: cc, r: cr, x: this.cellX(cc), z: this.cellZ(cr) };
+      this.cores.push(this.core);
       this.paths.push(this.makePath(wp.map(([c, r]) => [this.cellX(c), this.cellZ(r)] as [number, number]), false));
       this.airPaths.push(this.makePath([[this.cellX(pc), this.cellZ(pr)], [this.cellX(cc), this.cellZ(cr)]], true));
     }
@@ -159,7 +171,7 @@ export class Sim {
     return { xs, zs, cum, length: cum[cum.length - 1], air };
   }
 
-  private place(e: Enemy) {
+  place(e: Enemy) {
     const p = e.path;
     let d = e.dist;
     if (d < 0) d = 0;
@@ -210,16 +222,31 @@ export class Sim {
     const def = TOWER_BY_ID[defId];
     if (!def || !this.canBuild(c, r) || this.tokens < def.cost || this.state === 'won' || this.state === 'lost') return null;
     this.tokens -= def.cost;
+    return this.placeTower(def, c, r);
+  }
+
+  /** Put a tower on the board without paying for it (PvP summons and merges). */
+  placeTower(def: TowerDef, c: number, r: number, side = 0, rank = 1, silent = false, ext: Record<string, number> = {}): Tower {
     const t: Tower = {
       id: this.nextId++, def, c, r, x: this.cellX(c), z: this.cellZ(r), level: 1, cd: 0.25, burstLeft: 0, burstCd: 0,
       mode: def.id === 'cl_computer' ? 'strong' : 'first', yaw: 0, aimX: 0, aimZ: 1, targets: [], rampTs: [], tickT: 0, spin: 0, jamT: 0,
       buffDmg: 0, buffRate: 0, buffRange: 0, buffCrit: 0, stats: statsAt(def, 1), drones: [], kills: 0, dmgDone: 0, shotT: -9, born: this.time,
+      side, rank, ext,
     };
     if (def.drones) for (let i = 0; i < def.drones; i++) t.drones.push({ x: t.x, z: t.z, ang: (i / def.drones) * Math.PI * 2, cd: i * 0.1, target: null });
     this.towers.push(t);
     this.recomputeBuffs();
-    this.events.push({ t: 'build', tower: t, x: t.x, z: t.z });
+    if (!silent) this.events.push({ t: 'build', tower: t, x: t.x, z: t.z });
     return t;
+  }
+
+  /** Take a tower off the board with no refund (PvP merges). */
+  removeTower(t: Tower) {
+    const i = this.towers.indexOf(t);
+    if (i < 0) return;
+    this.towers.splice(i, 1);
+    t.targets.length = 0;
+    for (const p of this.projectiles) if (p.tower === t) p.alive = false;
   }
 
   upgrade(t: Tower): boolean {
@@ -248,10 +275,11 @@ export class Sim {
     for (const s of this.towers) {
       const b = s.def.buff;
       if (!b) continue;
-      const aux = statsAt(s.def, s.level).aux;
-      const range = statsAt(s.def, s.level).range;
+      const ss = this.statFn ? this.statFn(s) : statsAt(s.def, s.level);
+      // in duels only true supports have a radius; other units' auras (e.g. Fable) reach adjacent units
+      const aux = ss.aux, range = this.sided && s.def.kind !== 'support' ? 1.55 : ss.range;
       for (const t of this.towers) {
-        if (t === s || t.def.kind === 'support' || t.def.kind === 'income') continue;
+        if (t === s || t.def.kind === 'support' || t.def.kind === 'income' || t.side !== s.side) continue;
         if (Math.hypot(t.x - s.x, t.z - s.z) > range + 0.01) continue;
         // strongest buff of each kind wins (no stacking of the same stat)
         if (b.dmg) t.buffDmg = Math.max(t.buffDmg, b.dmg * aux);
@@ -261,7 +289,7 @@ export class Sim {
       }
     }
     for (const t of this.towers) {
-      const s = statsAt(t.def, t.level);
+      const s = this.statFn ? this.statFn(t) : statsAt(t.def, t.level);
       s.dmg *= 1 + t.buffDmg; s.rate *= 1 + t.buffRate;
       if (s.range < 50) s.range *= 1 + t.buffRange;
       t.stats = s;
@@ -294,7 +322,7 @@ export class Sim {
   }
 
   private targetable(t: Tower | null, e: Enemy) {
-    return e.alive && !e.phased && !(t && t.def.noAir && e.air);
+    return e.alive && !e.phased && !(t && t.def.noAir && e.air) && !(this.sided && t && e.pathIdx !== t.side);
   }
 
   pickTargets(t: Tower, n: number, range = t.stats.range, exclude?: Enemy[]): Enemy[] {
@@ -350,10 +378,11 @@ export class Sim {
     this.kills++;
     if (src) src.kills++;
     this.tokens += e.bounty; this.earned += e.bounty;
-    this.events.push({ t: 'death', enemy: e, x: e.x, y: e.y, z: e.z, n: e.bounty });
+    this.events.push({ t: 'death', enemy: e, tower: src ?? undefined, x: e.x, y: e.y, z: e.z, n: e.bounty });
     if (e.def.split) {
       for (let i = 0; i < e.def.split.n; i++) {
         const c = this.spawnEnemy(e.def.split.into, e.pathIdx, e.hpMult, Math.max(0, e.dist - i * 0.28));
+        c.spd = e.spd;
         c.born = this.time - 1; // no spawn-in animation
       }
       this.events.push({ t: 'split', enemy: e, x: e.x, z: e.z });
@@ -369,7 +398,7 @@ export class Sim {
       if (pct >= e.slowPct || e.slowT <= 0) e.slowPct = pct;
       e.slowT = Math.max(e.slowT, def.slow[1]);
     }
-    if (def.stun) e.stunT = Math.max(e.stunT, def.stun * (boss ? 0.35 : 1) * (1 + (t.level - 1) * 0.15));
+    if (def.stun) this.stun(e, def.stun * (boss ? 0.35 : 1) * (1 + (t.level - 1) * 0.15));
     if (def.dot) {
       const dps = def.dot[0] * (t.stats.dmg / def.dmg);
       if (dps >= e.dotDps || e.dotT <= 0) { e.dotDps = dps; e.dotSrc = t; }
@@ -377,6 +406,15 @@ export class Sim {
     }
     if (def.shred) e.armor = Math.max(Math.max(0, e.def.armor - def.shred * 3), e.armor - def.shred);
     if (def.vuln) { e.vuln = Math.max(e.vuln, def.vuln * t.stats.aux); e.vulnT = 0.6; }
+  }
+
+  /** Stun an enemy. In duels a stunned enemy is immune to further stuns for a second afterwards. */
+  stun(e: Enemy, dur: number) {
+    if (this.sided) {
+      if ((e.stunRes ?? 0) > 0) return;
+      e.stunRes = dur + 1.0;
+    }
+    e.stunT = Math.max(e.stunT, dur);
   }
 
   private rollDmg(t: Tower): [number, boolean] {
@@ -392,7 +430,7 @@ export class Sim {
     return [d, crit];
   }
 
-  private hit(e: Enemy, dmg: number, t: Tower, crit: boolean) {
+  hit(e: Enemy, dmg: number, t: Tower, crit: boolean) {
     const def = t.def;
     const was = e.alive;
     this.damage(e, dmg, t, def.pierce ?? 0, def.shieldMult ?? 1);
@@ -400,10 +438,11 @@ export class Sim {
     this.events.push({ t: 'hit', x: e.x, y: e.y + e.def.size * 0.35, z: e.z, n: dmg, crit, family: def.family, enemy: e });
   }
 
-  private explode(x: number, y: number, z: number, radius: number, dmg: number, t: Tower, crit: boolean, airOnlyGround: boolean) {
+  explode(x: number, y: number, z: number, radius: number, dmg: number, t: Tower, crit: boolean, airOnlyGround: boolean) {
     for (const e of this.enemies) {
       if (!e.alive || e.phased) continue;
       if (airOnlyGround && e.air) continue;
+      if (this.sided && e.pathIdx !== t.side) continue;
       const d = Math.hypot(e.x - x, e.z - z);
       const rr = radius + e.def.size * 0.2;
       if (d > rr) continue;
@@ -521,11 +560,13 @@ export class Sim {
         if (!e.alive) continue;
       }
       if (e.vulnT > 0) { e.vulnT -= dt; if (e.vulnT <= 0) e.vuln = 0; }
+      if (e.stunRes) e.stunRes = Math.max(0, e.stunRes - dt);
+      if (e.pullRes) e.pullRes = Math.max(0, e.pullRes - dt);
       if (e.maxShield > 0 && e.shield < e.maxShield) {
         e.shieldCd -= dt;
         if (e.shieldCd <= 0) e.shield = Math.min(e.maxShield, e.shield + e.maxShield * 0.15 * dt);
       }
-      let sp = def.speed;
+      let sp = def.speed * (e.spd ?? 1);
       if (e.slowT > 0) { e.slowT -= dt; sp *= 1 - e.slowPct; if (e.slowT <= 0) e.slowPct = 0; }
       if (e.stunT > 0) { e.stunT -= dt; sp = 0; }
       e.dist += sp * dt;
@@ -556,7 +597,7 @@ export class Sim {
         if (e.jamT <= 0) {
           let best: Tower | null = null, bd = def.jam.range;
           for (const t of this.towers) {
-            if (t.jamT > 0 || t.def.kind === 'income') continue;
+            if (t.jamT > 0 || t.def.kind === 'income' || (this.sided && t.side !== e.pathIdx)) continue;
             const d = Math.hypot(t.x - e.x, t.z - e.z);
             if (d < bd) { bd = d; best = t; }
           }
@@ -573,6 +614,7 @@ export class Sim {
           e.spawnT = def.spawn.cd;
           for (let k = 0; k < def.spawn.n; k++) {
             const c = this.spawnEnemy(def.spawn.type, e.pathIdx, Math.max(1, e.hpMult * 0.8), Math.min(e.path.length - 0.1, e.dist + 0.3 + k * 0.22));
+            c.spd = e.spd;
             c.born = this.time - 0.2;
           }
         }
@@ -643,7 +685,9 @@ export class Sim {
                 const e = t.targets[i];
                 if (!e.alive) continue;
                 const ramp = def.ramp ? 1 + (def.ramp[0] - 1) * Math.min(1, t.rampTs[i] / def.ramp[1]) : 1;
-                this.damage(e, st.dmg * BEAM_TICK * ramp, t, def.pierce ?? 0, def.shieldMult ?? 1);
+                // beams can't roll crits, so a crit aura adds its average value instead
+                const critAvg = t.buffCrit ? 1 + Math.min(1, t.buffCrit) * ((def.crit?.[1] ?? 2) - 1) : 1;
+                this.damage(e, st.dmg * BEAM_TICK * ramp * critAvg, t, def.pierce ?? 0, def.shieldMult ?? 1);
                 this.effects(e, t);
               }
             }
@@ -674,9 +718,9 @@ export class Sim {
           } else if (def.kind === 'rail') {
             const len = Math.hypot(t.aimX, t.aimZ) || 1;
             const ux = t.aimX / len, uz = t.aimZ / len;
-            const L = st.range + 1.2, w = def.railWidth ?? 0.4;
+            const L = Math.min(st.range, 9) + 1.2, w = def.railWidth ?? 0.4; // global-range rails (duels) stop at the board edge
             for (const o of this.enemies) {
-              if (!o.alive || o.phased) continue;
+              if (!o.alive || o.phased || (this.sided && o.pathIdx !== t.side)) continue;
               const rx = o.x - t.x, rz = o.z - t.z;
               const along = rx * ux + rz * uz;
               if (along < 0 || along > L) continue;
@@ -716,7 +760,8 @@ export class Sim {
           const [dmg, crit] = this.rollDmg(t);
           for (const e of this.enemies) {
             if (!this.targetable(t, e) || !this.inRange(t, e, st.range)) continue;
-            if (def.pull) {
+            if (def.pull && !(this.sided && (e.pullRes ?? 0) > 0)) {
+              if (this.sided) e.pullRes = 5;
               e.dist = Math.max(0, e.dist - def.pull * (e.def.boss ? 0.2 : 1) * (1 + (t.level - 1) * 0.15));
               this.place(e);
             }
@@ -732,7 +777,7 @@ export class Sim {
           t.tickT -= AURA_TICK;
           let any = false;
           for (const e of this.enemies) {
-            if (!e.alive || e.phased || !this.inRange(t, e, st.range)) continue;
+            if (!e.alive || e.phased || !this.inRange(t, e, st.range) || (this.sided && e.pathIdx !== t.side)) continue;
             any = true;
             if (st.dmg > 0) this.damage(e, st.dmg * AURA_TICK, t, 0, 1, true);
             this.effects(e, t);

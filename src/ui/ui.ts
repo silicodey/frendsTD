@@ -36,10 +36,13 @@ const fmt = (n: number) => (n >= 100 ? Math.round(n).toString() : n >= 10 ? n.to
 const MODE_LABEL: Record<string, string> = { first: 'First', strong: 'Strongest', near: 'Nearest', last: 'Last' };
 
 export class UI {
-  private menu: HTMLElement;
-  private hud: HTMLElement;
-  private modal: HTMLElement;
+  menu: HTMLElement;
+  hud: HTMLElement;
+  modal: HTMLElement;
   private toast: HTMLElement;
+  /** Extra click handlers (the duel screens). Return true when handled. */
+  extra: ((act: string, arg: string, el: HTMLElement) => boolean) | null = null;
+  titleExtra: (() => string) | null = null;
   private armoryFamily: Family = 'gemini';
   private armoryDetail: string | null = null;
   private armoryFrom: number | null = null; // level id when opened from a briefing
@@ -69,6 +72,7 @@ export class UI {
     const act = el.dataset.act!, arg = el.dataset.arg ?? '';
     const app = this.app;
     if (el.classList.contains('disabled')) { app.deny(); return; }
+    if (this.extra?.(act, arg, el)) return;
     if (!['upgrade', 'sell', 'wave'].includes(act)) app.click();
     switch (act) {
       case 'play': this.levels(); break;
@@ -128,7 +132,7 @@ export class UI {
     setTimeout(() => el.remove(), 2600);
   }
 
-  private thumb(def: TowerDef, size = 192) { return this.app.thumbs.tower(def, size); }
+  thumb(def: TowerDef, size = 192) { return this.app.thumbs.tower(def, size); }
 
   // ------------------------------------------------------------------ title
   title() {
@@ -138,6 +142,7 @@ export class UI {
     this.menu.className = 'screen title';
     this.menu.innerHTML = `
       <div class="title-top">
+        ${this.titleExtra?.() ?? ''}
         <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
       </div>
       <div class="title-mid">
@@ -146,9 +151,12 @@ export class UI {
         <div class="fam-row">${FAMILIES.map((f) => `<span class="fam-chip" style="--fc:${FAMILY_INFO[f].css}">${FAMILY_INFO[f].name}</span>`).join('')}</div>
       </div>
       <div class="title-bot">
-        <button class="btn primary big" data-act="play">${ICON.play}<span>${total > 0 ? 'Continue' : 'Play'}</span></button>
-        <button class="btn big" data-act="armory">${ICON.book}<span>Armory</span></button>
-        <p class="foot">48 towers · 15 levels · 3 worlds${total ? ` · ${total}/45 ★` : ''}</p>
+        <button class="btn primary big" data-act="pv-home">${ICON.swords}<span>Ranked 1v1</span></button>
+        <div class="row2">
+          <button class="btn big" data-act="play">${ICON.play}<span>Campaign</span></button>
+          <button class="btn big" data-act="armory">${ICON.book}<span>Armory</span></button>
+        </div>
+        <p class="foot">48 towers · 15 levels · 1v1 duels${total ? ` · ${total}/45 ★` : ''}</p>
       </div>`;
   }
 
@@ -195,7 +203,7 @@ export class UI {
         <div class="eyebrow">Level ${l.id} · ${th.name}</div>
         <h2>${esc(l.name)}</h2>
         <p class="dim">${esc(l.blurb)}</p>
-        <div class="meta-row"><span class="pill">${l.waves} waves</span><span class="pill">${l.paths.length > 1 ? l.paths.length + ' lanes' : '1 lane'}</span><span class="pill">${ICON.token}<b>${Math.round((l.startTokens * (1 + save.reinforcement(l.id))) / 10) * 10}</b></span>${save.reinforcement(l.id) ? `<span class="pill ok">Reinforcements +${Math.round(save.reinforcement(l.id) * 100)}%</span>` : ''}<span class="stars">${stars(save.data.stars[l.id] ?? 0)}</span></div>
+        <div class="meta-row"><span class="pill">${l.waves} waves</span><span class="pill">${l.paths.length > 1 ? l.paths.length + ' lanes' : '1 lane'}</span><span class="pill">${ICON.compute}<b>${Math.round((l.startTokens * (1 + save.reinforcement(l.id))) / 10) * 10}</b></span>${save.reinforcement(l.id) ? `<span class="pill ok">Reinforcements +${Math.round(save.reinforcement(l.id) * 100)}%</span>` : ''}<span class="stars">${stars(save.data.stars[l.id] ?? 0)}</span></div>
         <h3>Threats <span class="hint">tap for details</span></h3>
         <div class="threats">${types.map((t) => { const e = ENEMY_BY_ID[t]; return `<button class="threat ${e.boss ? 'boss' : ''}" data-act="threat" data-arg="${t}" aria-label="${esc(e.name)}: ${esc(e.desc)}"><img src="${this.app.thumbs.enemy(t, 128)}" alt=""><span>${esc(e.name)}</span></button>`; }).join('')}</div>
         <h3>Your loadout <button class="link" data-act="armory-from" data-arg="${l.id}">Change</button></h3>
@@ -227,7 +235,7 @@ export class UI {
         ${eq ? '<span class="eq-tag">Equipped</span>' : ''}
         ${open ? '' : `<span class="lock">${ICON.lock}<b>${need} ★</b></span>`}
         <span class="tname">${esc(t.name)}</span>
-        <span class="tcost">${ICON.token}${t.cost}</span>
+        <span class="tcost">${ICON.compute}${t.cost}</span>
       </button>`;
     }
     html += `</div></div>
@@ -269,7 +277,7 @@ export class UI {
           <div class="eyebrow">${info.name} · Tier ${ROMAN[t.tier - 1]}</div>
           <h2>${esc(t.name)}</h2>
           <div class="role">${esc(t.role)}</div>
-          <div class="pill">${ICON.token}<b>${t.cost}</b></div>
+          <div class="pill">${ICON.compute}<b>${t.cost}</b></div>
         </div>
       </div>
       <p class="desc">${esc(t.desc)}</p>
@@ -282,7 +290,7 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ modals
-  private openModal(html: string) { this.modal.hidden = false; this.modal.innerHTML = `<div class="scrim" data-act="${html.includes('data-noclose') ? '' : 'close'}"></div>${html}`; }
+  openModal(html: string) { this.modal.hidden = false; this.modal.innerHTML = `<div class="scrim" data-act="${html.includes('data-noclose') ? '' : 'close'}"></div>${html}`; }
   closeModal() { this.modal.hidden = true; this.modal.innerHTML = ''; }
   modalOpen() { return !this.modal.hidden; }
 
@@ -314,7 +322,7 @@ export class UI {
       </div>${this.settingsBody(true)}</div>`);
   }
 
-  result(won: boolean, levelId: number, nStars: number, sim: Sim, unlocked: string[], onStar: (i: number) => void) {
+  result(won: boolean, levelId: number, nStars: number, sim: Sim, unlocked: string[], onStar: (i: number) => void, tokensWon = 0) {
     const l = LEVELS[levelId - 1];
     const next = LEVELS[levelId];
     const last = won && !next;
@@ -322,8 +330,8 @@ export class UI {
     this.openModal(`<div class="sheet result ${won ? 'won' : 'lost'}" data-noclose>
       <div class="eyebrow">Level ${l.id} · ${esc(l.name)}</div>
       <h2>${won ? (last ? 'The Core is safe' : 'Victory') : 'Core breached'}</h2>
-      ${won ? `<div class="big-stars">${stars(nStars)}</div>` : `<p class="dim">You held until wave ${sim.waveIdx + 1} of ${sim.waves.length}. Reinforcements are on the way: your next attempt starts with +${Math.round(Math.min(4, (this.app.save.data.fails[levelId] ?? 0)) * 15)}% tokens.</p>`}
-      <div class="meta-row center"><span class="pill">${ICON.core}<b>${sim.lives}</b><i>/${sim.maxLives}</i></span><span class="pill">${sim.kills} kills</span><span class="pill">${ICON.token}<b>${sim.earned}</b> earned</span></div>
+      ${won ? `<div class="big-stars">${stars(nStars)}</div>` : `<p class="dim">You held until wave ${sim.waveIdx + 1} of ${sim.waves.length}. Reinforcements are on the way: your next attempt starts with +${Math.round(Math.min(4, (this.app.save.data.fails[levelId] ?? 0)) * 15)}% compute.</p>`}
+      <div class="meta-row center"><span class="pill">${ICON.core}<b>${sim.lives}</b><i>/${sim.maxLives}</i></span><span class="pill">${sim.kills} kills</span>${tokensWon ? `<span class="pill gold">${ICON.token}<b>+${tokensWon}</b> Tokens</span>` : ''}</div>
       ${last ? '<p class="dim">Every world cleared. The Maximizer is paperclips. Thanks for playing, frend.</p>' : ''}
       ${un.length ? `<h3>New towers unlocked</h3><div class="unlocks">${un.map((d) => `<div class="slot" style="--fc:${FAMILY_INFO[d.family].css}"><img src="${this.thumb(d)}" alt=""><span>${esc(d.name)}</span></div>`).join('')}</div>` : ''}
       <div class="btn-col">
@@ -352,7 +360,7 @@ export class UI {
       <div class="hud-top">
         <div class="hud-l">
           <div class="res lives" id="h-lives">${ICON.core}<b>${sim.lives}</b></div>
-          <div class="res tokens" id="h-tokens">${ICON.token}<b>${sim.tokens}</b></div>
+          <div class="res tokens" id="h-tokens">${ICON.compute}<b>${sim.tokens}</b></div>
         </div>
         <div class="hud-c"><span class="wave-l">Wave</span><b id="h-wave">0/${sim.waves.length}</b><div class="wave-bar"><i id="h-wavebar"></i></div></div>
         <div class="hud-r">
@@ -368,8 +376,8 @@ export class UI {
           <button class="wave-btn" data-act="wave" id="h-wavebtn"><span class="wb-main">${ICON.play}<b id="h-wavetxt">Start wave</b></span><span class="wb-prev" id="h-prev"></span></button>
         </div>
         <div class="build" id="h-build">
-          ${lo.map((d) => `<button class="card" data-card="${d.id}" style="--fc:${FAMILY_INFO[d.family].css}" aria-label="${esc(d.name)}, ${d.cost} tokens">
-            <img src="${this.thumb(d)}" alt="" draggable="false"><span class="cname">${esc(d.name)}</span><span class="ccost">${ICON.token}${d.cost}</span></button>`).join('')}
+          ${lo.map((d) => `<button class="card" data-card="${d.id}" style="--fc:${FAMILY_INFO[d.family].css}" aria-label="${esc(d.name)}, ${d.cost} compute">
+            <img src="${this.thumb(d)}" alt="" draggable="false"><span class="cname">${esc(d.name)}</span><span class="ccost">${ICON.compute}${d.cost}</span></button>`).join('')}
         </div>
         <div class="panel" id="h-panel" hidden></div>
       </div>`;
@@ -483,9 +491,9 @@ export class UI {
             <div class="p-role">${info.name} · ${esc(d.role)}${buffed ? ' · <em>Buffed</em>' : ''}</div>
             <div class="p-stats">${bits.join('')}</div></div></div>
           <div class="p-btns">
-            ${t.level < MAX_LEVEL ? `<button class="btn primary ${canUp ? '' : 'disabled'}" data-act="upgrade">${ICON.up}<span>Upgrade</span><em>${ICON.token}${cost}</em></button>` : `<div class="btn maxed">Max level</div>`}
+            ${t.level < MAX_LEVEL ? `<button class="btn primary ${canUp ? '' : 'disabled'}" data-act="upgrade">${ICON.up}<span>Upgrade</span><em>${ICON.compute}${cost}</em></button>` : `<div class="btn maxed">Max level</div>`}
             ${targets ? `<button class="btn" data-act="mode">${ICON.target}<span>${MODE_LABEL[t.mode]}</span></button>` : ''}
-            <button class="btn" data-act="sell">${ICON.sell}<span>Sell</span><em>${ICON.token}${sim.sellValue(t)}</em></button>
+            <button class="btn" data-act="sell">${ICON.sell}<span>Sell</span><em>${ICON.compute}${sim.sellValue(t)}</em></button>
           </div>`;
         this.app.renderNow();
       }

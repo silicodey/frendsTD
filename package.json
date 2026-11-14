@@ -10,7 +10,9 @@
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
     "balance": "tsx tools/balance.ts",
-    "trace": "tsx tools/trace.ts"
+    "trace": "tsx tools/trace.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "duel": "tsx tools/duel.ts"
   },
   "dependencies": {
     "three": "^0.170.0"

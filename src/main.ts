@@ -10,6 +10,9 @@ import { Save } from './save';
 import { Bot } from './sim/bot';
 import { Sim, TARGET_MODES, type SimEvent, type Tower } from './sim/sim';
 import { Trailer } from './trailer/trailer';
+import { Duel, type DuelOptions } from './pvp/battle';
+import { PvpScreens } from './pvp/screens';
+import { PvpBot } from './pvp/bot';
 import { UI, type AppApi } from './ui/ui';
 
 const TAP_SLOP = 10;
@@ -23,7 +26,9 @@ class App implements AppApi {
   ui: UI;
   sim: Sim | null = null;
   private bot: Bot | null = null;
-  mode: 'menu' | 'game' = 'menu';
+  mode: 'menu' | 'game' | 'pvp' = 'menu';
+  duel: Duel | null = null;
+  screens!: PvpScreens;
   paused = false;
   speed = 1;
   selCard: string | null = null;
@@ -54,6 +59,12 @@ class App implements AppApi {
     this.view.onEvent = (ev) => this.onSimEvent(ev);
     this.thumbs = new Thumbs(this.engine);
     this.ui = new UI(document.getElementById('ui')!, this);
+    this.screens = new PvpScreens({
+      save: this.save, ui: this.ui, audio: this.audio,
+      startDuel: (o) => this.startDuel(o), endDuel: () => this.endDuel(), toTitle: () => this.ui.title(), renderNow: () => this.renderNow(),
+      duelResume: () => this.duel?.resume(), duelForfeit: () => this.duel?.forfeit(),
+    });
+    this.ui.titleExtra = () => this.screens.wallet();
     this.applySettings();
     this.bindInput();
     window.addEventListener('resize', () => this.resize());
@@ -61,6 +72,7 @@ class App implements AppApi {
     document.addEventListener('visibilitychange', () => {
       this.audio.suspend(document.hidden);
       if (document.hidden && this.mode === 'game' && !this.paused && !this.ended && !this.ui.modalOpen()) { this.setPaused(true); this.ui.pause(); }
+      if (document.hidden && this.mode === 'pvp' && this.duel && !this.duel.paused && !this.duel.match.ended && !this.ui.modalOpen()) this.duel.menu();
     });
     const unlock = () => this.audio.unlock();
     // iOS only treats touchend/click as a user gesture for audio, so listen broadly
@@ -95,6 +107,7 @@ class App implements AppApi {
     this.bot = new Bot(sim, TOWERS.filter((t) => tiers.includes(t.tier) && t.kind !== 'income').map((t) => t.id));
     this.sim = sim;
     this.mode = 'menu';
+    this.view.dimOthers = false;
     this.selCard = null; this.selTower = null;
     this.view.load(sim, THEMES[level.world]);
     this.applySettings();
@@ -125,6 +138,33 @@ class App implements AppApi {
   }
 
   restart() { this.startLevel(this.levelId); }
+
+  /** Start a duel (ranked, practice or local). */
+  startDuel(opts: DuelOptions) {
+    this.duel?.dispose();
+    clearTimeout(this.endTimer);
+    this.ui.hudHide();
+    this.ui.closeModal();
+    this.mode = 'pvp'; this.bot = null; this.selCard = null; this.selTower = null; this.paused = false;
+    this.engine.zoom = 1; this.engine.pan.set(0, 0, 0); this.engine.azimuth = 0; this.engine.intro = 1;
+    this.camEl = 1.12;
+    this.duel = new Duel({
+      engine: this.engine, view: this.view, audio: this.audio, ui: this.ui, canvas: this.canvas,
+      setSim: (sim) => { this.sim = sim; },
+      onEnd: (m, o) => this.screens.finished(m, o),
+      leave: () => this.endDuel(),
+    }, opts);
+    this.applySettings();
+    this.resize();
+  }
+
+  /** Leave the duel and go back to the menus (the attract battle resumes behind them). */
+  endDuel() {
+    if (!this.duel) return;
+    this.duel.dispose();
+    this.duel = null;
+    this.attract();
+  }
 
   quitToMenu() {
     clearTimeout(this.endTimer);
@@ -190,6 +230,7 @@ class App implements AppApi {
     this.engine.resize(w, h);
     const sim = this.sim;
     if (!sim) return;
+    if (this.mode === 'pvp' && this.duel) { this.duel.layout(); return; }
     if (this.mode === 'game') {
       const top = document.querySelector('.hud-top')?.getBoundingClientRect().height ?? 70;
       const bot = document.querySelector('.hud-bot')?.getBoundingClientRect().height ?? 170;
@@ -344,8 +385,9 @@ class App implements AppApi {
   // ------------------------------------------------------------ sim events → sound + UI
   private onSimEvent(ev: SimEvent) {
     const a = this.audio;
-    const game = this.mode === 'game';
+    const game = this.mode === 'game' || this.mode === 'pvp';
     if (!game) return; // the attract battle is silent
+    if (this.mode === 'pvp' && ['waveStart', 'waveEnd', 'win', 'lose', 'leak'].includes(ev.t)) return; // the duel handles these itself
     switch (ev.t) {
       case 'shot': { const d = ev.tower!.def; a.shot(d.family, !!d.splash || d.tier >= 9); break; }
       case 'chain': a.zap(); break;
@@ -384,13 +426,14 @@ class App implements AppApi {
     this.selectCard(null);
     if (won) this.save.data.tutorial = true;
     const n = sim.stars();
+    const tokensWon = won ? this.save.campaignTokens(this.levelId, n) : 0;
     const unlocked = won ? this.save.complete(this.levelId, n) : [];
     if (!won) this.save.data.fails[this.levelId] = (this.save.data.fails[this.levelId] ?? 0) + 1;
     this.save.write();
     if (won) this.celebrate = 3.2;
     this.endTimer = window.setTimeout(() => {
       if (won) this.audio.win(); else this.audio.lose();
-      this.ui.result(won, this.levelId, n, sim, unlocked, (i) => this.audio.star(i));
+      this.ui.result(won, this.levelId, n, sim, unlocked, (i) => this.audio.star(i), tokensWon);
     }, won ? 1300 : 900);
   }
 
@@ -405,6 +448,9 @@ class App implements AppApi {
     if (this.tutStep === 4) { this.tutT += dt; if (this.tutT > 7) { this.tutStep = 0; this.save.data.tutorial = true; this.save.write(); this.ui.tip(null); return; } }
     this.ui.tip(this.selTower ? null : tips[this.tutStep]);
   }
+
+  /** Dev/test aid: let the duel AI play your side (`__td.duelAutopilot(0.8)`). */
+  duelAutopilot(skill = 0.8) { if (this.duel) this.duel.autopilot = new PvpBot(this.duel.match, 0, skill, 7); }
 
   /** Dev aid: let the balance bot play the current level with the equipped loadout (`__td.autoplay()`). */
   autoplay() { if (this.sim && this.mode === 'game') this.bot = new Bot(this.sim, this.save.data.loadout); }
@@ -433,7 +479,13 @@ class App implements AppApi {
     const e = this.engine;
     let simDt = 0;
     if (sim) {
-      if (this.mode === 'menu') {
+      if (this.mode === 'pvp' && this.duel) {
+        simDt = this.duel.update(dt);
+        this.camEl += (1.12 - this.camEl) * Math.min(1, dt * 3);
+        const m = this.duel.match;
+        this.audio.intensity = m.ended ? 0.1 : [0, 1].some((sd) => m.bossAlive(sd)) ? 1 : 0.75;
+        if (simDt > 0) for (const t of sim.towers) if (t.def.kind === 'beam' && t.targets.length && t.side === 0) { this.audio.beam(t.def.family); break; }
+      } else if (this.mode === 'menu') {
         this.bot?.update(dt); sim.step(dt); simDt = dt;
         if (sim.state === 'won' || sim.state === 'lost') { this.attract(); }
         e.azimuth = Math.sin(e.time * 0.11) * 0.5;

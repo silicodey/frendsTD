@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Theme } from '../data/types';
 import { mulberry32 } from '../data/levels';
-import { CELL_BLOCKED, CELL_CORE, CELL_FREE, CELL_PORTAL, type Sim } from '../sim/sim';
+import { CELL_BLOCKED, CELL_CORE, CELL_FREE, CELL_PORTAL, CELL_VOID, type Sim } from '../sim/sim';
 import { Builder, box, cone, cyl, ico, oct, rbox, sph, tor, type Mat } from './builder';
 import { additive, makePbr } from './materials';
 import type { Engine } from './engine';
@@ -89,6 +89,7 @@ export class Board {
   private coreCrystal!: THREE.Mesh;
   private coreRings: THREE.Mesh[] = [];
   private coreLight!: THREE.PointLight;
+  private extraCores: THREE.Group[] = [];
   private coreMat = makePbr();
   private coreFlash = 0;
   private drift: THREE.InstancedMesh | null = null;
@@ -235,7 +236,7 @@ export class Board {
     const cells: [number, number][] = [];
     for (let r = 0; r < sim.rows; r++) for (let c = 0; c < sim.cols; c++) {
       const v = sim.grid[r * sim.cols + c];
-      if (v !== CELL_FREE && v !== CELL_BLOCKED) cells.push([c, r]);
+      if (v !== CELL_FREE && v !== CELL_BLOCKED && v !== CELL_VOID) cells.push([c, r]);
     }
     const fgeo = this.own(new THREE.BoxGeometry(1.0, 0.1, 1.0));
     const fmat = this.own(new THREE.MeshStandardMaterial({ color: theme.path, metalness: 0.9, roughness: 0.28, envMapIntensity: 1.3 }));
@@ -465,6 +466,27 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     this.core.add(this.coreLight);
     this.core.position.set(core.x, 0, core.z);
     this.group.add(this.core);
+    // duels: one Core at the end of each lane (extra ones share meshes, no extra light)
+    for (const c of this.sim.cores) {
+      if (Math.hypot(c.x - core.x, c.z - core.z) < 0.1) continue;
+      const g = new THREE.Group();
+      for (const ch of this.core.children) if (!(ch instanceof THREE.Light)) g.add(ch.clone());
+      g.position.set(c.x, 0, c.z);
+      this.extraCores.push(g);
+      this.group.add(g);
+    }
+    // the neutral strip between two duel boards
+    const voids: number[] = [];
+    for (let r = 0; r < this.sim.rows; r++) if (this.sim.grid[r * this.sim.cols + 1] === CELL_VOID) voids.push(r);
+    if (voids.length) {
+      const z = this.sim.cellZ(voids[0]), W = this.sim.cols;
+      const d = new Builder();
+      d.add(box(W + 0.4, 0.05, 0.05), { c: 0xdfe8ff, e: 2.2, p: [0, -0.02, z] });
+      for (const s of [-1, 1]) d.add(box(W + 0.4, 0.03, 0.02), { c: this.theme.tileAccent, e: 2.4, p: [0, -0.05, z + s * 0.32] });
+      for (let i = 0; i < 9; i++) d.add(oct(0.06), { c: this.theme.rim, e: 2.6, flat: true, p: [(i - 4) * (W / 9), 0.02, z], s: [1.4, 0.4, 0.6] });
+      const strip = new THREE.Mesh(this.own(d.build('base')!), this.own(makePbr()));
+      this.group.add(strip);
+    }
   }
 
   coreHit() { this.coreFlash = 1; }
@@ -627,6 +649,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     this.coreCrystal.position.y = 0.72 + Math.sin(time * 1.7) * 0.05;
     this.coreRings[0].rotation.set(time * 0.8, time * 0.5, 0);
     this.coreRings[1].rotation.set(P2 + time * 0.4, 0, time * 0.9);
+    for (const g of this.extraCores) { g.children[1].rotation.y = -time * 0.9; g.children[2].rotation.set(time * 0.8, time * 0.5, 0); }
     this.coreFlash = Math.max(0, this.coreFlash - dt * 2.5);
     this.coreMat.u.uFx.value.x = this.coreFlash * 1.5;
     this.coreMat.u.uGlow.value = 1 + Math.sin(time * 2.4) * 0.15;

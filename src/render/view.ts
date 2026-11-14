@@ -4,7 +4,7 @@ import { ENEMIES } from '../data/enemies';
 import { TOWER_BY_ID } from '../data/towers';
 import { CELL_FREE, type Enemy, type Projectile, type Sim, type SimEvent, type Tower } from '../sim/sim';
 import { Board } from './board';
-import { Builder, oct, tor } from './builder';
+import { Builder, cyl, oct, tor } from './builder';
 import type { Engine } from './engine';
 import { enemyModel, type EnemyModel } from './enemyModels';
 import { Fx } from './fx';
@@ -29,7 +29,8 @@ export class TowerVis {
   mat = makePbr();
   model: TowerModel;
   parts: { mesh: THREE.Mesh; spin: [number, number, number]; bob: number; bobSpeed: number; py: number }[] = [];
-  yaw = 0; recoil = 0; flash = 0; activity = 0; level = 1;
+  yaw = 0; recoil = 0; flash = 0; activity = 0; level = 1; rank = 0;
+  private rankPips: THREE.Mesh | null = null;
   private pips: THREE.Mesh | null = null;
   seed = Math.random() * 10;
 
@@ -74,6 +75,26 @@ export class TowerVis {
       this.group.add(this.pips);
     }
     this.mat.u.uGlow.value = 1 + (level - 1) * 0.22;
+  }
+
+  /** Duel merge rank: a row of dots on the front of the base, gold from rank 6. */
+  setRank(rank: number) {
+    if (rank === this.rank) return;
+    this.rank = rank;
+    if (this.rankPips) { this.group.remove(this.rankPips); this.rankPips.geometry.dispose(); this.rankPips = null; }
+    const b = new Builder();
+    const col = rank >= 6 ? 0xffd166 : rank >= 4 ? 0xd27bff : 0x9fe8ff;
+    // dots on an arc around the front of the base, readable from the duel camera
+    const spread = Math.min(1.9, 0.38 * (rank - 1));
+    for (let i = 0; i < rank; i++) {
+      const a = rank === 1 ? 0 : -spread / 2 + (spread * i) / (rank - 1);
+      b.add(oct(0.075), { c: col, e: 3.2, flat: true, p: [Math.sin(a) * 0.5, 0.16, Math.cos(a) * 0.5], s: [1, 1.15, 1] });
+      b.add(cyl(0.05, 0.065, 0.1, 8), { c: 0x0b0f18, m: 0.6, ro: 0.4, p: [Math.sin(a) * 0.5, 0.06, Math.cos(a) * 0.5] });
+    }
+    if (rank >= 6) b.add(tor(0.58, 0.016, 6, 48), { c: 0xffd166, e: 2.6, p: [0, 0.05, 0], r: [Math.PI / 2, 0, 0] });
+    this.rankPips = new THREE.Mesh(b.build('base')!, this.mat);
+    this.group.add(this.rankPips);
+    this.mat.u.uGlow.value = 1 + (rank - 1) * 0.12;
   }
 
   animate(dt: number, time: number) {
@@ -134,6 +155,12 @@ export class GameView {
   private ghost: TowerVis | null = null;
   private ghostDef: string | null = null;
   selected: Tower | null = null;
+  /** Duel input: the unit being dragged (and where), and units it can merge with. */
+  drags = new Map<number, { x: number; z: number }>();
+  mergeTargets = new Set<number>();
+  dimOthers = false;
+  /** Duels: show kill rewards on both lanes (local duel) or only yours. */
+  showAllGains = false;
   root = new THREE.Group();
   onEvent: ((ev: SimEvent) => void) | null = null;
   private healthBarCap = 400;
@@ -501,7 +528,7 @@ export class GameView {
         const s = e.def.size;
         fx.burst(e.x, e.y + 0.25 * s, e.z, e.def.color, Math.round(6 + s * 8), 2.2 + s, 0.09 + s * 0.03, 0.5, 5, 0.5);
         fx.flash(e.x, e.y + 0.25 * s, e.z, e.def.color, 0.8 + s * 0.9, 0.2, 1.3);
-        fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold');
+        if (!this.sim.sided || e.pathIdx === 0 || this.showAllGains) fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold');
         this.ghosts.push({ type: e.def.id, x: e.x, y: e.y, z: e.z, yaw: Math.atan2(e.dx, e.dz), scale: s, t: 0 });
         if (e.def.boss || s >= 1.6) {
           fx.explosion(e.x, e.y + 0.4, e.z, e.def.color, s * 1.3, true);
@@ -534,8 +561,8 @@ export class GameView {
         fx.fountain(t.x, 0.1, t.z, GOLD, 26, 3.2, 0.1, 1.0);
         fx.flash(t.x, 0.9, t.z, GOLD, 2.2, 0.3, 1.3);
         fx.light(t.x, 0.9, t.z, GOLD, 8, 0.45);
-        this.towers.get(t.id)?.setLevel(t.level);
-        fx.text(t.x, 1.5, t.z, `LEVEL ${t.level}`, 'up');
+        if (this.sim.sided) fx.text(t.x, 1.5, t.z, `RANK ${t.rank}`, 'up');
+        else { this.towers.get(t.id)?.setLevel(t.level); fx.text(t.x, 1.5, t.z, `LEVEL ${t.level}`, 'up'); }
         break;
       }
       case 'sell': {
@@ -592,8 +619,14 @@ export class GameView {
         if (this.slots.visible) this.showSlots(true);
       }
       const age = sim.time - t.born;
-      const sc = (age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1) * (1 + (t.level - 1) * 0.07) * TOWER_SCALE;
+      const sc = (age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1) * (1 + (t.level - 1) * 0.07) * (1 + (t.rank - 1) * 0.035) * TOWER_SCALE;
       v.group.scale.setScalar(sc);
+      if (sim.sided) {
+        v.setRank(t.rank);
+        const dg = this.drags.get(t.id);
+        if (dg) v.group.position.set(dg.x, 0.5, dg.z);
+        else v.group.position.set(t.x, 0, t.z);
+      }
       if (v.model.aims && (t.aimX || t.aimZ)) {
         const want = Math.atan2(t.aimX, t.aimZ);
         let d = want - v.yaw;
@@ -605,6 +638,12 @@ export class GameView {
       if (jam && Math.random() < dt * 14) fx.burst(t.x + (Math.random() - 0.5) * 0.4, 0.5 + Math.random() * 0.6, t.z + (Math.random() - 0.5) * 0.4, 0xd04dff, 1, 0.8, 0.08, 0.3, 0, 0);
       if (t.def.spinup) v.activity = Math.max(v.activity, (t.spin / t.def.spinup[1]) * 1.4);
       v.animate(dt, time);
+      if (sim.sided) {
+        const target = this.mergeTargets.has(t.id);
+        if (target) v.mat.u.uFx.value.x = Math.max(v.mat.u.uFx.value.x, 0.3 + 0.25 * Math.sin(time * 9));
+        if (this.drags.size && !this.drags.has(t.id) && !target && this.dimOthers && !jam) v.mat.u.uFx.value.w = 0.55;
+        else if (!jam && v.mat.u.uFx.value.w > 0.5 && v.mat.u.uFx.value.w < 0.6) v.mat.u.uFx.value.w = 0;
+      }
       // persistent beams
       if (t.def.kind === 'beam' && t.targets.length && !jam) {
         const info = FAMILY_INFO[t.def.family];

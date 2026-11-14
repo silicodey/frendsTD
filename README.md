@@ -49,6 +49,65 @@ produces `dist/index.html` — the complete game in one file. Host it anywhere, 
 - **Stars** (by Core integrity) unlock higher tiers. Losing a level grants reinforcements (+15% starting tokens per
   defeat) so nobody gets stuck.
 
+## Ranked 1v1 (duels)
+
+A Rush Royale-style mode. Each player gets a 5×3 board with its own lane around it; both lanes receive
+identical waves.
+
+- **Summon**: spend compute for a random unit from your 5-unit deck. Each summon costs a bit more.
+- **Merge**: drag a unit onto an identical unit of the same rank. Both vanish and a *random* unit from your deck appears one rank higher (ranks 1–7).
+- **Power up**: raise one unit type for the rest of the match (costs 100 / 200 / 400 / 700 compute).
+- **Bosses** arrive every 4th wave on both lanes and use abilities on your board: Hydra swaps units around, Deepfake Titan steals a rank, the Paperclip Maximizer jams two units.
+- Each leak costs a heart (bosses cost two). Lose 3 hearts and you lose. Matches run about 4–5 minutes.
+
+Modes: **Ranked** (AI rivals matched to your Elo and deck strength; uses a Limit), **Practice** (free, no rewards) and
+**Local duel** (two people on one phone: player 2's controls are rotated toward them).
+
+### Which towers become duel units
+
+Not all 48 towers are collectible. `src/pvp/roster.ts` scores every tower on raw power within its family,
+tier, how well its attack type suits a merge board, mechanical depth, and how distinctive it is. Each
+family keeps its best six, covering all four rarities without repeating attack types. Income towers are
+left out. The top three per family become **Signature units**:
+
+| Family | Signature units |
+| --- | --- |
+| Gemini | Ultra, Deep Think, Twin Suns |
+| Claude | Claude Code, Computer Use, Fable |
+| Codex | Refactor, Agent Swarm, Codex Max |
+| Grok | Grok Heavy, Event Horizon, Supernova |
+
+Each Signature unit has a **special capability** (for example Supernova's *Cascade*: every 5th strike hits
+the whole lane) that grows 6% stronger per card level, and a **talent tree**: at levels 9, 11, 13 and 15
+you pick one of two talents (`src/pvp/signatures.ts`).
+
+### Rarity, levels and the economy
+
+| Rarity | Tiers | Starts at level | Unlocks |
+| --- | --- | --- | --- |
+| Common | I–III | 1 | Sandbox |
+| Rare | IV–VI | 3 | Sandbox |
+| Epic | VII–IX | 5 | Staging (300 Elo) |
+| Legendary | X–XII | 7 | Canary, Production, Frontier (700 / 1200 / 1800 Elo) |
+
+Units level up to 15 with **Weights** (that unit's cards) plus **Tokens**. Rarer units need fewer Weights
+but Weights for them are much rarer.
+
+| Currency | What it is |
+| --- | --- |
+| Tokens | Main currency. Earned from battles, Checkpoints and campaign stars; spent on upgrades and the shop. |
+| Weights | Per-unit cards from Checkpoints and the shop. The first one unlocks the unit. |
+| Limits | Ranked battles use one each. One comes back every 8 minutes, up to 8. |
+| Resets | Premium currency. Reset your Limits instantly, change a talent, or buy Tokens. Earned from Usage levels. |
+| Usage | Account XP from upgrades and battles. Usage tiers: Free → Pro → Max → Team → Enterprise. Each level pays Tokens and 2 Resets and resets your Limits. |
+| Elo | Rating. Climbing it moves you through six arenas, which unlock rarer units. |
+
+Wins also pay a **Checkpoint** (reward chest; at least one Epic every 10 wins) full of Tokens and Weights
+for units available in your arena.
+
+Duels run entirely on the device: ranked opponents are AI rivals, not other people online (that would need a
+game server). Local duel is the way to play another person.
+
 ## How it's built
 
 | Path | What |
@@ -62,8 +121,16 @@ produces `dist/index.html` — the complete game in one file. Host it anywhere, 
 | `src/render/thumbs.ts` | Tower and enemy portraits rendered by the game renderer for the UI |
 | `src/ui/`, `src/style.css` | Menus and HUD (plain DOM) |
 | `src/audio/audio.ts` | Synthesized sound effects and generative music (WebAudio) |
+| `src/pvp/` | Duels: roster logic, signatures and talents, economy, profile, match engine, AI rival, battle HUD and screens |
+| `tests/` | Unit tests for the duel rules, economy, abilities and bosses (`npm test`) |
 
-### Balance tools
+### Tests and balance tools
+
+```bash
+npm test                 # duel rules, economy, profile, abilities, bosses, AI-vs-AI fairness
+npm run duel -- 30       # 30 headless duels between AI rivals
+```
+
 
 ```bash
 npm run balance          # the bot plays every level with five different loadouts
