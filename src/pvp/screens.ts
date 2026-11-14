@@ -484,13 +484,16 @@ export class PvpScreens {
     this.screen('pvp-online', `
       <header class="bar"><button class="icon-btn" data-act="pv-on-back" aria-label="Back">${ICON.back}</button><h1>Play a friend</h1></header>
       <div class="scroll on-wrap">
-        <section class="on-card">
-          <span class="eyebrow">Duel server</span>
-          <p class="dim">Online duels go through a small game server. Enter its address: whoever set it up can share it (for example <b>wss://frendstd.example.com</b> or <b>192.168.1.20:8787</b> on home Wi-Fi).</p>
-          <input id="on-server" class="field" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wss://your-server.example.com" value="${esc(this.serverInput)}">
-          <button class="btn primary big wide" data-act="pv-on-connect">${ICON.globe}<span>Connect</span></button>
-          <p class="dim small">Running the server yourself: <code>npm run build</code>, then <code>npm run server</code>. It also serves the game, so friends can just open its address in a browser.</p>
+        <section class="on-card center">
+          <span class="eyebrow">Online play</span>
+          <p>Online duels aren't available in this copy of the game yet.</p>
+          <p class="dim small">Local duel and Practice work offline.</p>
         </section>
+        <details class="on-dev">
+          <summary>Developer: use a custom server</summary>
+          <input id="on-server" class="field" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wss://your-server.example.com" value="${esc(this.serverInput)}">
+          <button class="btn wide" data-act="pv-on-connect">${ICON.globe}<span>Connect</span></button>
+        </details>
       </div>`);
   }
 
@@ -498,17 +501,16 @@ export class PvpScreens {
     const net = this.net;
     if (!net) { this.serverForm(); return; }
     clearInterval(this.onTimer);
-    const host = (() => { try { return new URL(net.url).host; } catch { return net.url; } })();
     const head = (title: string) => `<header class="bar"><button class="icon-btn" data-act="pv-on-back" aria-label="Back">${ICON.back}</button><h1>${title}</h1></header>`;
     const focused = (document.activeElement as HTMLElement | null)?.id;
     if (net.status !== 'online' && !net.code) {
       const err = net.error && net.status === 'offline';
       this.screen('pvp-online', `${head('Play a friend')}
         <div class="scroll on-wrap"><section class="on-card center">
-          ${err ? `<span class="eyebrow danger">Can't connect</span><p>${esc(net.error!.msg)}</p><p class="dim small">Server: ${esc(host)}</p>
-            <button class="btn primary big wide" data-act="pv-on-retry">${ICON.restart}<span>Try again</span></button>
-            <button class="btn wide" data-act="pv-on-server">${ICON.globe}<span>Change server</span></button>`
-          : `<div class="spinner"></div><p>Connecting to <b>${esc(host)}</b>…</p>`}
+          ${err ? `<span class="eyebrow danger">Can't connect</span><p>${esc(net.error!.msg)}</p>
+            <button class="btn primary big wide" data-act="pv-on-retry">${ICON.restart}<span>Try again</span></button>`
+          : net.waking ? `<div class="spinner"></div><p><b>Waking up the game server…</b></p><p class="dim small">When nobody has played for a while it takes a moment to start (up to a minute). You only wait the first time.</p>`
+          : '<div class="spinner"></div><p>Connecting…</p>'}
         </section></div>`);
       return;
     }
@@ -530,7 +532,7 @@ export class PvpScreens {
             <div class="on-join"><input id="on-code" class="field code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" value="${esc(this.joinCode)}">
             <button class="btn" data-act="pv-on-join">Join</button></div>
           </section>
-          <p class="dim small center">Server ${esc(host)} · ${net.rtt} ms · <button class="link" data-act="pv-on-server">change</button></p>
+          <p class="dim small center">${ICON.globe} Online · ${net.rtt} ms</p>
           <p class="dim small center">Friend duels use your current deck and levels. No Limits are spent and no rating changes.</p>
         </div>`);
       if (focused) (document.getElementById(focused) as HTMLInputElement | null)?.focus();

@@ -1,0 +1,9 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repository.
+# One web service that serves the game and runs the online duel server (see Dockerfile).
+services:
+  - type: web
+    name: frendstd
+    runtime: docker
+    plan: free            # sleeps after ~15 min idle; "starter" stays awake
+    healthCheckPath: /health
+    autoDeploy: true      # every push to the connected branch redeploys

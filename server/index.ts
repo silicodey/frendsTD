@@ -73,7 +73,7 @@ export function startServer(opts: ServerOptions = {}) {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     if (url.pathname === '/health') {
-      res.writeHead(200, { 'content-type': 'application/json' });
+      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ ok: true, proto: PROTO, rooms: rooms.size }));
       return;
     }

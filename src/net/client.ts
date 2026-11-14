@@ -3,6 +3,7 @@ import {
   PROTO, TICK_MS, cleanCode,
   type ClientMsg, type Cmd, type LobbyPlayer, type ServerMsg, type StartInfo, type TimedCmd,
 } from './protocol';
+import { GAME_SERVER } from './config';
 
 const SERVER_KEY = 'frendstd.server';
 const RESUME_KEY = 'frendstd.online';
@@ -29,17 +30,24 @@ export function normalizeServer(input: string): string {
   } catch { return ''; }
 }
 
-/** The server to use: ?server=, then the saved choice, then the build default, then the site this page came from. */
+const sameOrigin = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+
+/**
+ * The server to use. A developer override (?server=…, remembered) comes first. A page served over plain
+ * http is a local or home-network server, so it talks to itself. Otherwise the server built into the game,
+ * and failing that the site the page came from.
+ */
 export function defaultServer(): string {
-  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('server') : null;
+  const loc = typeof location !== 'undefined' ? location : null;
+  const q = loc ? new URLSearchParams(loc.search).get('server') : null;
   if (q) { const n = normalizeServer(q); if (n) { store.set(SERVER_KEY, n, local()); return n; } }
   const saved = store.get(SERVER_KEY, local());
   if (saved) return saved;
+  if (loc?.protocol === 'http:' && loc.host) return sameOrigin();
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SERVER_URL;
-  if (env) return normalizeServer(env);
-  if (typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && !/claude|anthropic/.test(location.hostname)) {
-    return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
-  }
+  const built = normalizeServer(env || GAME_SERVER);
+  if (built) return built;
+  if (loc && loc.protocol === 'https:' && !/claude|anthropic/.test(loc.hostname)) return sameOrigin();
   return '';
 }
 
@@ -79,6 +87,9 @@ export class OnlineSession {
   desync = false;
   roomSince = 0; // local ms when we entered the current room
   rtt = 0;
+  /** The server is asleep (free hosting idles) and is being woken up: tell the player it takes a moment. */
+  waking = false;
+  private woke = false;
   private ws: WebSocket | null = null;
   private want = false;
   private retry = 0;
@@ -111,11 +122,35 @@ export class OnlineSession {
     clearTimeout(this.retryTimer);
     this.status = 'connecting';
     this.emit('status');
+    if (!this.woke) { this.wake(); return; }
+    this.openSocket();
+  }
+
+  /**
+   * A free server sleeps when nobody has played for a while and needs up to a minute to start.
+   * Knock on its health page first (that wakes it) and only then open the game connection.
+   */
+  private wake() {
+    const health = this.url.replace(/^ws/i, 'http').replace(/\/ws$/, '/health');
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const giveUp = setTimeout(() => ctrl?.abort(), 90000);
+    const slow = setTimeout(() => { if (this.status === 'connecting') { this.waking = true; this.emit('status'); } }, 2000);
+    const done = () => {
+      clearTimeout(giveUp); clearTimeout(slow);
+      this.woke = true;
+      if (!this.want) return;
+      this.openSocket();
+    };
+    fetch(health, { cache: 'no-store', signal: ctrl?.signal }).then(done, done);
+  }
+
+  private openSocket() {
     let ws: WebSocket;
     try { ws = new WebSocket(this.url); } catch { this.fail('connect', 'That server address is not valid.'); return; }
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
+      this.waking = false;
       this.status = 'online';
       this.error = null;
       const h = this.hello();
@@ -140,7 +175,7 @@ export class OnlineSession {
       this.status = 'offline';
       this.emit('status');
       if (!this.want) return;
-      if (!wasOnline && this.retry >= 2 && !this.code) { this.fail('connect', 'Could not reach the duel server.'); return; }
+      if (!wasOnline && this.retry >= 5 && !this.code) { this.fail('connect', "Couldn't reach the game server. Check your internet connection and try again."); return; }
       this.retry++;
       this.retryTimer = window.setTimeout(() => this.connect(), Math.min(5000, 500 * 2 ** Math.min(4, this.retry)));
     };
@@ -161,6 +196,7 @@ export class OnlineSession {
 
   private fail(code: string, msg: string) {
     this.want = false;
+    this.woke = false; this.waking = false; this.retry = 0;
     this.error = { code, msg };
     this.status = 'offline';
     this.emit('error');
