@@ -12,5 +12,5 @@
     "esModuleInterop": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "tools", "tests"]
+  "include": ["src", "tools", "tests", "server"]
 }

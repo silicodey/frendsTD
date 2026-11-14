@@ -10,8 +10,10 @@ import { ICON } from '../ui/icons';
 import { PvpBot } from './bot';
 import { HEARTS, MAX_POWER, PvpMatch, type MatchEvent, type PlayerSetup } from './match';
 import { RARITY_INFO, rarityOf } from './roster';
+import type { OnlineSession } from '../net/client';
+import { DT, HASH_EVERY, Lockstep, TICK_MS, applyCmd, matchHash, type Cmd } from '../net/protocol';
 
-export type DuelMode = 'ranked' | 'local' | 'practice';
+export type DuelMode = 'ranked' | 'local' | 'practice' | 'online';
 
 export interface DuelOptions {
   mode: DuelMode;
@@ -22,6 +24,8 @@ export interface DuelOptions {
   seed: number;
   /** First duel: coach the player through summon, merge and power-up. */
   tutorial?: boolean;
+  /** Online: the server connection and which side of the board is ours (1 = the top lane, shown at the bottom). */
+  online?: { session: OnlineSession; side: number };
 }
 
 export interface DuelHost {
@@ -52,22 +56,36 @@ export class Duel {
   private bannerT = 0;
   private tip = 0; // tutorial step (0 = off)
   private tipT = 0;
+  /** Our side of the match (0 = bottom lane). Online, the second player is side 1 and the camera turns round. */
+  readonly me: number;
+  readonly foe: number;
+  private lock: Lockstep | null = null;
+  private net: OnlineSession | null = null;
 
   constructor(private host: DuelHost, public opts: DuelOptions) {
-    this.match = new PvpMatch(opts.me, opts.rival, opts.seed);
-    if (opts.mode !== 'local') this.bot = new PvpBot(this.match, 1, opts.rivalSkill, opts.seed);
+    const on = opts.online;
+    this.me = on?.side ?? 0;
+    this.foe = 1 - this.me;
+    if (on) {
+      const info = on.session.info!;
+      this.net = on.session;
+      this.match = new PvpMatch(info.setups[0], info.setups[1], info.seed);
+      this.lock = new Lockstep(this.match, (t) => on.session.cmds.get(t));
+    } else this.match = new PvpMatch(opts.me, opts.rival, opts.seed);
+    if (opts.mode === 'ranked' || opts.mode === 'practice') this.bot = new PvpBot(this.match, 1, opts.rivalSkill, opts.seed);
     host.setSim(this.match.sim);
+    host.view.mySide = this.me;
     host.view.load(this.match.sim, THEMES[opts.theme]);
     host.view.dimOthers = true;
     host.view.showAllGains = opts.mode === 'local';
     this.root = document.createElement('div');
     this.root.id = 'pvp';
-    this.root.className = `pvp ${opts.mode === 'local' ? 'local' : ''}`;
+    this.root.className = `pvp ${opts.mode === 'local' ? 'local' : ''} ${on ? 'online' : ''}`;
     document.getElementById('ui')!.appendChild(this.root);
     this.buildHud();
     this.bindInput();
     this.layout();
-    this.banner('Duel', opts.mode === 'local' ? 'Local · first to lose 3 hearts loses' : `vs ${opts.rival.name}`);
+    if (!on) this.banner('Duel', opts.mode === 'local' ? 'Local · first to lose 3 hearts loses' : `vs ${opts.rival.name}`);
     if (opts.tutorial) this.tip = 1;
   }
 
@@ -88,31 +106,44 @@ export class Duel {
   }
 
   private buildHud() {
-    const m = this.match, local = this.opts.mode === 'local';
-    const rival = m.sides[1];
+    const m = this.match, local = this.opts.mode === 'local', online = !!this.net, foe = this.foe;
+    const rival = m.sides[foe];
     this.root.innerHTML = `
       <div class="pv-top ${local ? 'flip' : ''}">
         ${local ? this.controls(1) : `
         <div class="pv-rival">
-          <div class="pv-who"><span class="pv-avatar">${esc(rival.name[0] ?? '?')}</span><div><b>${esc(rival.name)}</b><i>${ICON.elo}${rival.elo}</i></div></div>
-          <div class="pv-hearts" id="pv-hearts-1"></div>
-          <div class="pv-rdeck">${rival.deck.map((u, i) => `<span class="pv-mini" style="--rc:${RARITY_INFO[rarityOf(u.base)].css}"><img src="${this.host.ui.thumb(u.base)}" alt="${esc(u.base.name)}"><i id="pv-lv-1-${i}">1</i></span>`).join('')}</div>
+          <div class="pv-who"><span class="pv-avatar">${esc(rival.name[0] ?? '?')}</span><div><b>${esc(rival.name)}</b>${online ? `<i class="pv-net" id="pv-net">${ICON.globe}<span>online</span></i>` : `<i>${ICON.elo}${rival.elo}</i>`}</div></div>
+          <div class="pv-hearts" id="pv-hearts-${foe}"></div>
+          <div class="pv-rdeck">${rival.deck.map((u, i) => `<span class="pv-mini" style="--rc:${RARITY_INFO[rarityOf(u.base)].css}"><img src="${this.host.ui.thumb(u.base)}" alt="${esc(u.base.name)}"><i id="pv-lv-${foe}-${i}">1</i></span>`).join('')}</div>
         </div>`}
         ${local ? '' : `<button class="icon-btn pv-menu" data-pact="menu" aria-label="Menu">${ICON.pause}</button>`}
       </div>
       <div class="pv-mid"><div class="pv-wave" id="pv-wave">Get ready</div>${local ? `<button class="icon-btn pv-menu" data-pact="menu" aria-label="Menu">${ICON.pause}</button>` : ''}</div>
       <div class="pv-banner" id="pv-banner" hidden></div>
       <div class="pv-coach" id="pv-coach" hidden></div>
-      <div class="pv-bot">${this.controls(0)}</div>`;
+      ${online ? '<div class="pv-count" id="pv-count" hidden></div><div class="pv-netmsg" id="pv-netmsg" hidden></div>' : ''}
+      <div class="pv-bot">${this.controls(this.me)}</div>`;
     const onClick = (e: Event) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pact]');
       if (!el || this.paused) { if (el?.dataset.pact === 'menu') this.menu(); return; }
       const side = Number(el.dataset.side ?? 0);
-      if (el.dataset.pact === 'summon') { if (!this.match.summon(side)) this.host.audio.deny(); }
-      else if (el.dataset.pact === 'power') { if (!this.match.powerUp(side, Number(el.dataset.i))) this.host.audio.deny(); }
+      if (el.dataset.pact === 'summon') this.act(side, { k: 's' });
+      else if (el.dataset.pact === 'power') this.act(side, { k: 'p', i: Number(el.dataset.i) });
       else if (el.dataset.pact === 'menu') this.menu();
     };
     this.root.addEventListener('click', onClick);
+  }
+
+  /** Do something for a side: right away offline; online, send it to the server (it lands for both players at the same tick). */
+  private act(side: number, c: Cmd) {
+    if (!this.canControl(side) || this.match.ended) return;
+    if (!this.net) { if (!applyCmd(this.match, side, c)) this.host.audio.deny(); return; }
+    if (this.net.clockTick() < 0) { this.host.audio.deny(); return; }
+    const m = this.match, s = m.sides[side];
+    // obvious refusals get instant feedback instead of a round trip
+    if (c.k === 's' && (s.compute < m.summonCost(side) || !m.freeSlots(side).length)) { this.host.audio.deny(); return; }
+    if (c.k === 'p' && s.compute < m.powerCost(side, c.i)) { this.host.audio.deny(); return; }
+    this.net.cmd(c);
   }
 
   layout() {
@@ -174,11 +205,12 @@ export class Duel {
   menu() {
     if (this.match.ended) return;
     this.paused = true;
-    const ranked = this.opts.mode === 'ranked';
-    this.host.ui.openModal(`<div class="sheet small" data-noclose><h2>Paused</h2>
+    const ranked = this.opts.mode === 'ranked', online = !!this.net;
+    this.host.ui.openModal(`<div class="sheet small" data-noclose><h2>${online ? 'Menu' : 'Paused'}</h2>
+      ${online ? '<p class="dim">The match keeps running for your friend while this is open.</p>' : ''}
       <div class="btn-col">
-        <button class="btn primary big wide" data-act="duel-resume">${ICON.play}<span>Resume</span></button>
-        <button class="btn wide danger" data-act="duel-forfeit">${ranked ? 'Forfeit (counts as a loss)' : 'Leave duel'}</button>
+        <button class="btn primary big wide" data-act="duel-resume">${ICON.play}<span>${online ? 'Back to the match' : 'Resume'}</span></button>
+        <button class="btn wide danger" data-act="duel-forfeit">${ranked ? 'Forfeit (counts as a loss)' : online ? 'Concede the match' : 'Leave duel'}</button>
       </div></div>`);
   }
 
@@ -187,12 +219,13 @@ export class Duel {
     this.host.ui.closeModal();
     this.paused = false;
     const m = this.match;
-    if (!m.ended) { m.sides[0].hearts = 0; m.ended = true; m.winner = 1; m.events.push({ t: 'end', side: 1 }); }
+    if (this.net) { if (!m.ended) this.net.cmd({ k: 'f' }); return; }
+    if (!m.ended) m.forfeit(0);
   }
 
   // ------------------------------------------------------------------ input: drag a unit onto its twin to merge
   private sideAt(r: number) { return this.match.sideOfCell(r); }
-  private canControl(side: number) { return side === 0 || this.opts.mode === 'local'; }
+  private canControl(side: number) { return side === this.me || this.opts.mode === 'local'; }
 
   private towerAtPoint(x: number, y: number): Tower | null {
     const p = this.host.engine.pick(x, y);
@@ -240,7 +273,7 @@ export class Duel {
       this.host.view.drags.delete(g.tower.id);
       if (g.moved) {
         const target = this.towerAtPoint(e.clientX, e.clientY - this.lift(e, g)) ?? this.towerAtPoint(e.clientX, e.clientY);
-        if (target && target !== g.tower && this.match.canMerge(g.tower, target) && e.type === 'pointerup') this.match.merge(g.tower, target);
+        if (target && target !== g.tower && this.match.canMerge(g.tower, target) && e.type === 'pointerup') this.act(g.tower.side, { k: 'm', a: g.tower.id, b: target.id });
         else if (target && target !== g.tower) this.host.audio.deny();
       } else if (e.type === 'pointerup') this.info(g.tower);
       this.refreshTargets();
@@ -251,8 +284,8 @@ export class Duel {
     window.addEventListener('pointercancel', up);
     const key = (e: KeyboardEvent) => {
       if (this.paused || this.match.ended) { if (e.key === 'Escape' && this.paused) this.resume(); return; }
-      if (e.key === ' ') { e.preventDefault(); if (!this.match.summon(0)) this.host.audio.deny(); }
-      else if (e.key >= '1' && e.key <= '5') { if (!this.match.powerUp(0, Number(e.key) - 1)) this.host.audio.deny(); }
+      if (e.key === ' ') { e.preventDefault(); this.act(this.me, { k: 's' }); }
+      else if (e.key >= '1' && e.key <= '5') this.act(this.me, { k: 'p', i: Number(e.key) - 1 });
       else if (e.key === 'Escape') this.menu();
     };
     window.addEventListener('keydown', key);
@@ -278,7 +311,7 @@ export class Duel {
 
   // ------------------------------------------------------------------ events → sound and callouts
   private onEvent(ev: MatchEvent) {
-    const a = this.host.audio, fx = this.host.view.fx, mine = ev.side === 0 || this.opts.mode === 'local';
+    const a = this.host.audio, fx = this.host.view.fx, mine = ev.side === this.me || this.opts.mode === 'local';
     switch (ev.t) {
       case 'summon': if (mine) a.build(); break;
       case 'merge':
@@ -295,7 +328,7 @@ export class Duel {
         break;
       }
       case 'heart': {
-        if (ev.side === 0 || this.opts.mode === 'local') { a.leak(); this.host.engine.damage = Math.min(1, this.host.engine.damage + 0.4); try { navigator.vibrate?.(60); } catch { /* */ } }
+        if (mine) { a.leak(); this.host.engine.damage = Math.min(1, this.host.engine.damage + 0.4); try { navigator.vibrate?.(60); } catch { /* */ } }
         const el = this.root.querySelector(`#pv-hearts-${ev.side}`);
         el?.classList.remove('hit'); void (el as HTMLElement | null)?.offsetWidth; el?.classList.add('hit');
         break;
@@ -303,7 +336,7 @@ export class Duel {
       case 'wave': a.wave(ev.n! % 4 === 0); if (ev.n! % 4 !== 0) this.banner(`Wave ${ev.n}`, ev.n! > 14 ? 'Overtime: enemies grow fast' : ''); break;
       case 'boss': this.banner(ENEMY_BY_ID[ev.kind!]?.name ?? 'Boss', 'Boss on both lanes', 'boss'); break;
       case 'bossCast':
-        if (ev.side === 0 || this.opts.mode === 'local') { this.host.ui.say(ev.text ?? 'Boss ability'); a.jam(); }
+        if (mine) { this.host.ui.say(ev.text ?? 'Boss ability'); a.jam(); }
         if (ev.x !== undefined) fx.ring(ev.x, 0.05, ev.z!, 0xff3d6a, 0.2, 1.6, 0.5, 0.12, 0.3);
         if (ev.kind === 'drain' && ev.tower) fx.text(ev.tower.x, 1.5, ev.tower.z, 'RANK −1', 'dmg');
         break;
@@ -319,16 +352,24 @@ export class Duel {
   update(dt: number): number {
     const m = this.match;
     let simDt = 0;
-    if (!this.paused && !m.ended) {
+    if (this.net) simDt = this.stepOnline();
+    else if (!this.paused && !m.ended) {
       for (let i = 0; i < this.speed; i++) {
         this.bot?.update(dt);
         this.autopilot?.update(dt);
         m.step(dt);
         simDt += dt;
       }
-    } else if (m.ended && this.endT > 0) {
+    }
+    if (m.ended && this.endT > 0) {
       this.endT -= dt;
-      if (this.endT <= 0) { this.endT = -1; this.host.onEnd(m, this.opts); }
+      if (this.endT <= 0) {
+        this.endT = -1;
+        // online, the server's copy of the match is the referee
+        const r = this.net?.result;
+        if (r && r.winner !== m.winner) m.winner = r.winner;
+        this.host.onEnd(m, this.opts);
+      }
     }
     // a unit that merged or vanished mid-drag drops the drag
     for (const [pid, g] of this.grabs) if (!m.sim.towers.includes(g.tower)) { this.grabs.delete(pid); this.host.view.drags.delete(g.tower.id); this.refreshTargets(); }
@@ -336,13 +377,70 @@ export class Duel {
     m.events.length = 0;
     this.coach(dt);
     this.updateHud();
+    if (this.net) this.updateNet();
     if (this.bannerT > 0) { this.bannerT -= dt; if (this.bannerT <= 0) this.root.querySelector<HTMLElement>('#pv-banner')!.hidden = true; }
     return simDt;
   }
 
+  // ------------------------------------------------------------------ online lockstep
+  /** Dev/test aid: let the AI play our side (online it sends its moves through the server like a person). */
+  enableAutopilot(skill: number) {
+    this.autopilot = new PvpBot(this.match, this.me, skill, 7, this.net ? (c) => this.net!.cmd(c) : undefined);
+  }
+
+  /** Simulate up to the tick the clock says, but never past what the server has confirmed. */
+  private stepOnline(): number {
+    const net = this.net!, lock = this.lock!, m = this.match;
+    if (net.clockTick() >= 0 && !m.ended) this.autopilot?.update(1 / 60);
+    const r = net.result;
+    // the referee says it is over but we have not got there (only possible after a divergence): end it here
+    if (r && !m.ended && lock.tick >= r.tick + 30) { m.ended = true; m.winner = r.winner; m.events.push({ t: 'end', side: r.winner }); }
+    if (m.ended) return 0;
+    const target = Math.min(net.clockTick() + 1, net.upto + 1);
+    const behind = target - lock.tick;
+    if (behind <= 0) return 0;
+    const catchUp = behind > 20;
+    const max = catchUp ? Math.min(behind, 900) : 3;
+    let n = 0;
+    while (lock.tick < target && n < max && !m.ended) {
+      lock.step();
+      n++;
+      if (lock.tick % HASH_EVERY === 0) net.hash(lock.tick, matchHash(m));
+      if (catchUp) {
+        // fast-forwarding (after a reconnect or a backgrounded tab): skip the effects and sounds of the past
+        m.sim.events.length = 0;
+        const end = m.events.find((e) => e.t === 'end');
+        m.events.length = 0;
+        if (end) m.events.push(end);
+      }
+    }
+    return Math.min(n, 3) * DT;
+  }
+
+  private updateNet() {
+    const net = this.net!, m = this.match;
+    // the shared start countdown
+    const left = net.countdown();
+    const count = left > 0 ? String(Math.ceil(left)) : left > -0.9 && !m.ended ? 'GO!' : '';
+    this.set('pv-count', count, (el) => { el.hidden = !count; el.textContent = count; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); });
+    // connection problems, ours or theirs
+    let msg = '';
+    if (net.status !== 'online') msg = 'Connection lost · reconnecting…';
+    else if (!net.peerOnline[this.foe] && !m.ended) {
+      const s = Math.max(0, Math.ceil((net.peerGraceUntil - Date.now()) / 1000));
+      msg = `${m.sides[this.foe].name} disconnected · ${s}s to come back`;
+    } else if (this.lock!.tick < net.clockTick() - 30 && !m.ended && left < 0) msg = 'Waiting for the server…';
+    this.set('pv-netmsg', msg, (el) => { el.hidden = !msg; el.textContent = msg; });
+    const ping = net.status === 'online' ? `${net.rtt} ms` : 'offline';
+    this.set('pv-net', `${ping}:${net.peerOnline[this.foe]}`, (el) => {
+      el.querySelector('span')!.textContent = net.peerOnline[this.foe] ? ping : 'away';
+      el.classList.toggle('bad', net.status !== 'online' || !net.peerOnline[this.foe] || net.rtt > 250);
+    });
+  }
+
   // ------------------------------------------------------------------ first-duel coach
   private coachEvent(ev: MatchEvent) {
-    if (!this.tip || ev.side !== 0) return;
+    if (!this.tip || ev.side !== this.me) return;
     if (this.tip === 1 && ev.t === 'summon' && this.match.sides[0].summons >= 2) this.next();
     else if (this.tip === 2 && ev.t === 'merge') this.next();
     else if (this.tip === 3 && ev.t === 'power') this.next();

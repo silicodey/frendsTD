@@ -2,6 +2,7 @@ import type { EnemyDef, Family, LevelDef, TowerDef, Wave } from '../data/types';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { buildWaves, mulberry32 } from '../data/levels';
 import { MAX_LEVEL, SELL_REFUND, TOWER_BY_ID, investedAt, statsAt, upgradeCost, type TowerStats } from '../data/towers';
+import { cos, hypot, hypot3, log2, pow, sin } from './dmath';
 
 export const CELL_FREE = 0, CELL_PATH = 1, CELL_BLOCKED = 2, CELL_PORTAL = 3, CELL_CORE = 4, CELL_VOID = 5;
 export type TargetMode = 'first' | 'strong' | 'near' | 'last';
@@ -156,18 +157,18 @@ export class Sim {
       const [x, z] = wp[i];
       if (i === 0 || i === wp.length - 1) { xs.push(x); zs.push(z); continue; }
       const [px, pz] = wp[i - 1], [nx, nz] = wp[i + 1];
-      const l0 = Math.hypot(x - px, z - pz), l1 = Math.hypot(nx - x, nz - z);
+      const l0 = hypot(x - px, z - pz), l1 = hypot(nx - x, nz - z);
       const d0x = (x - px) / l0, d0z = (z - pz) / l0, d1x = (nx - x) / l1, d1z = (nz - z) / l1;
       const r = Math.min(R, l0 / 2, l1 / 2);
       const cx = x - d0x * r + d1x * r, cz = z - d0z * r + d1z * r;
       for (let k = 0; k <= 8; k++) {
-        const th = (k / 8) * Math.PI * 0.5, co = Math.cos(th), si = Math.sin(th);
+        const th = (k / 8) * Math.PI * 0.5, co = cos(th), si = sin(th);
         xs.push(cx + (-d1x * co + d0x * si) * r);
         zs.push(cz + (-d1z * co + d0z * si) * r);
       }
     }
     const cum = [0];
-    for (let i = 1; i < xs.length; i++) cum.push(cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]));
+    for (let i = 1; i < xs.length; i++) cum.push(cum[i - 1] + hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]));
     return { xs, zs, cum, length: cum[cum.length - 1], air };
   }
 
@@ -198,11 +199,11 @@ export class Sim {
     const base = this.level.hp;
     const e: Enemy = {
       id: this.nextId++, def, hp, maxHp: hp, shield: (def.shield ?? 0) * hpMult, maxShield: (def.shield ?? 0) * hpMult, shieldCd: 0,
-      armor: def.armor * (1 + Math.max(0, Math.log2(hpMult / Math.max(1, base))) * 0.25), path, pathIdx, dist, off: (this.rng() - 0.5) * (def.boss ? 0.05 : 0.44),
+      armor: def.armor * (1 + Math.max(0, log2(hpMult / Math.max(1, base))) * 0.25), path, pathIdx, dist, off: (this.rng() - 0.5) * (def.boss ? 0.05 : 0.44),
       x: 0, y: air ? AIR_HEIGHT : 0, z: 0, dx: 0, dz: 0,
       slowPct: 0, slowT: 0, stunT: 0, dotDps: 0, dotT: 0, dotSrc: null, vuln: 0, vulnT: 0,
       phaseT: this.rng() * 2, phased: false, healT: 1, jamT: 2.5, spawnT: 3, alive: true,
-      bounty: Math.max(1, Math.round(def.bounty * Math.pow(hpMult, BOUNTY_EXP))),
+      bounty: Math.max(1, Math.round(def.bounty * pow(hpMult, BOUNTY_EXP))),
       hpMult, air, born: this.time, hitT: -9, seg: 0,
     };
     const p = e.path;
@@ -280,7 +281,7 @@ export class Sim {
       const aux = ss.aux, range = this.sided && s.def.kind !== 'support' ? 1.55 : ss.range;
       for (const t of this.towers) {
         if (t === s || t.def.kind === 'support' || t.def.kind === 'income' || t.side !== s.side) continue;
-        if (Math.hypot(t.x - s.x, t.z - s.z) > range + 0.01) continue;
+        if (hypot(t.x - s.x, t.z - s.z) > range + 0.01) continue;
         // strongest buff of each kind wins (no stacking of the same stat)
         if (b.dmg) t.buffDmg = Math.max(t.buffDmg, b.dmg * aux);
         if (b.rate) t.buffRate = Math.max(t.buffRate, b.rate * aux);
@@ -335,7 +336,7 @@ export class Sim {
       let s: number;
       switch (t.mode) {
         case 'strong': s = e.hp + e.shield; break;
-        case 'near': s = -Math.hypot(e.x - t.x, e.z - t.z); break;
+        case 'near': s = -hypot(e.x - t.x, e.z - t.z); break;
         case 'last': s = e.path.length - e.dist; break;
         default: s = -(e.path.length - e.dist);
       }
@@ -443,7 +444,7 @@ export class Sim {
       if (!e.alive || e.phased) continue;
       if (airOnlyGround && e.air) continue;
       if (this.sided && e.pathIdx !== t.side) continue;
-      const d = Math.hypot(e.x - x, e.z - z);
+      const d = hypot(e.x - x, e.z - z);
       const rr = radius + e.def.size * 0.2;
       if (d > rr) continue;
       const f = d < radius * 0.5 ? 1 : 1 - 0.5 * ((d - radius * 0.5) / (rr - radius * 0.5));
@@ -463,7 +464,7 @@ export class Sim {
       tx: target.x, ty: target.y + target.def.size * 0.3, tz: target.z, target, speed, dmg, crit, t: 0, dur: 0, alive: true, dmgMult: 1,
     };
     if (lob) {
-      const d = Math.hypot(target.x - ox, target.z - oz);
+      const d = hypot(target.x - ox, target.z - oz);
       p.dur = Math.max(0.45, d / speed);
       // lead the target
       const lead = target.stunT > 0 ? 0 : target.def.speed * (1 - (target.slowT > 0 ? target.slowPct : 0)) * p.dur;
@@ -491,7 +492,7 @@ export class Sim {
       let best: Enemy | null = null, bd = jr * jr;
       for (const e of this.enemies) {
         if (!this.targetable(t, e) || hitSet.indexOf(e) >= 0) continue;
-        const dd = (e.x - cur.x) ** 2 + (e.z - cur.z) ** 2;
+        const ddx = e.x - cur.x, ddz = e.z - cur.z, dd = ddx * ddx + ddz * ddz;
         if (dd < bd) { bd = dd; best = e; }
       }
       if (!best) break;
@@ -585,7 +586,7 @@ export class Sim {
           let any = false;
           for (const o of list) {
             if (o === e || !o.alive || o.hp >= o.maxHp) continue;
-            if (Math.hypot(o.x - e.x, o.z - e.z) > def.heal.range) continue;
+            if (hypot(o.x - e.x, o.z - e.z) > def.heal.range) continue;
             o.hp = Math.min(o.maxHp, o.hp + o.maxHp * def.heal.pct * (o.def.boss ? 0.25 : 1));
             any = true;
           }
@@ -598,7 +599,7 @@ export class Sim {
           let best: Tower | null = null, bd = def.jam.range;
           for (const t of this.towers) {
             if (t.jamT > 0 || t.def.kind === 'income' || (this.sided && t.side !== e.pathIdx)) continue;
-            const d = Math.hypot(t.x - e.x, t.z - e.z);
+            const d = hypot(t.x - e.x, t.z - e.z);
             if (d < bd) { bd = d; best = t; }
           }
           if (best) {
@@ -716,7 +717,7 @@ export class Sim {
             this.hit(e, dmg, t, crit);
             this.events.push({ t: 'sniper', tower: t, x: ex, y: ey, z: ez, family: def.family, crit, enemy: e });
           } else if (def.kind === 'rail') {
-            const len = Math.hypot(t.aimX, t.aimZ) || 1;
+            const len = hypot(t.aimX, t.aimZ) || 1;
             const ux = t.aimX / len, uz = t.aimZ / len;
             const L = Math.min(st.range, 9) + 1.2, w = def.railWidth ?? 0.4; // global-range rails (duels) stop at the board edge
             for (const o of this.enemies) {
@@ -734,10 +735,10 @@ export class Sim {
             this.explode(ex, ey, ez, def.splash ?? 1, dmg, t, crit, false);
             if (def.chain) {
               // fork from the strike point to nearby survivors
-              let first: Enemy | null = null, bd = def.chain[2] ** 2;
+              let first: Enemy | null = null, bd = def.chain[2] * def.chain[2];
               for (const o of this.enemies) {
                 if (!this.targetable(t, o)) continue;
-                const dd = (o.x - ex) ** 2 + (o.z - ez) ** 2;
+                const odx = o.x - ex, odz = o.z - ez, dd = odx * odx + odz * odz;
                 if (dd < bd && dd > 0.0001) { bd = dd; first = o; }
               }
               if (first) {
@@ -794,15 +795,15 @@ export class Sim {
             d.target = e;
             let gx: number, gz: number;
             if (e) {
-              gx = e.x + Math.cos(d.ang * 1.7 + i * 1.57) * 0.7; gz = e.z + Math.sin(d.ang * 1.7 + i * 1.57) * 0.7;
+              gx = e.x + cos(d.ang * 1.7 + i * 1.57) * 0.7; gz = e.z + sin(d.ang * 1.7 + i * 1.57) * 0.7;
             } else {
-              gx = t.x + Math.cos(d.ang) * 0.75; gz = t.z + Math.sin(d.ang) * 0.75;
+              gx = t.x + cos(d.ang) * 0.75; gz = t.z + sin(d.ang) * 0.75;
             }
-            const dx = gx - d.x, dz = gz - d.z, dl = Math.hypot(dx, dz);
+            const dx = gx - d.x, dz = gz - d.z, dl = hypot(dx, dz);
             const sp = Math.min(dl, 6.5 * dt);
             if (dl > 0.001) { d.x += (dx / dl) * sp; d.z += (dz / dl) * sp; }
             d.cd -= dt;
-            if (e && d.cd <= 0 && Math.hypot(e.x - d.x, e.z - d.z) < 1.6) {
+            if (e && d.cd <= 0 && hypot(e.x - d.x, e.z - d.z) < 1.6) {
               d.cd = 1 / st.rate;
               this.fire(t, e, d.x, d.z, 1.5);
             }
@@ -836,7 +837,7 @@ export class Sim {
       if (e && e.alive) { p.tx = e.x; p.ty = e.y + e.def.size * 0.3; p.tz = e.z; }
       else if (e) p.target = null;
       const dx = p.tx - p.x, dy = p.ty - p.y, dz = p.tz - p.z;
-      const d = Math.hypot(dx, dy, dz);
+      const d = hypot3(dx, dy, dz);
       const stepLen = (p.speed + p.t * 6) * dt; // slight acceleration
       if (d <= stepLen + 0.12) {
         p.alive = false;

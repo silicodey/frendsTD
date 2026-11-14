@@ -87,7 +87,7 @@ export class Engine {
     const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.7, 0.82);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.26, 0.5, 0.9);
     // clamp bloom input: MSAA-extrapolated speculars on sub-pixel geometry can produce fireflies
     const hp = (this.bloom as unknown as { materialHighPassFilter: THREE.ShaderMaterial }).materialHighPassFilter;
     hp.fragmentShader = hp.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );', 'vec4 texel = texture2D( tDiffuse, vUv ); if (isnan(texel.r) || isnan(texel.g) || isnan(texel.b)) texel = vec4(0.0); texel = clamp(texel, vec4(0.0), vec4(10.0));');
@@ -103,7 +103,7 @@ export class Engine {
     this.quality = q;
     this.maxDpr = q === 'high' ? 2 : q === 'medium' ? 1.5 : 1;
     this.renderer.shadowMap.enabled = q !== 'low';
-    this.bloom.strength = q === 'low' ? 0.45 : 0.55;
+    this.bloom.strength = q === 'low' ? 0.2 : 0.26;
     this.dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr);
     this.applySize();
   }
@@ -165,6 +165,9 @@ export class Engine {
       const midY = (minY + maxY) / 2;
       target.z -= (midY - cy) * dist * 0.3 * Math.tan((this.camera.fov * Math.PI) / 360) / 0.287;
     }
+    // the board is point-symmetric, so a camera turned round the vertical axis frames it with the target turned too
+    const ca = Math.cos(az), sa = Math.sin(az), tx = target.x, tz = target.z;
+    target.x = tx * ca + tz * sa; target.z = -tx * sa + tz * ca;
     this.fitDist = dist;
     this.azimuth = az;
     this.fitEl = this.elevation;

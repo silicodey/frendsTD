@@ -1,6 +1,7 @@
 import { mulberry32 } from '../data/levels';
 import type { Tower } from '../sim/sim';
 import { MAX_POWER, type PvpMatch } from './match';
+import { applyCmd, type Cmd } from '../net/protocol';
 
 /**
  * An AI rival. It plays through the same actions a human has (summon, merge, power up) and only sees
@@ -10,8 +11,14 @@ export class PvpBot {
   private t = 0;
   private rng: () => number;
 
-  constructor(private match: PvpMatch, public side: number, public skill = 0.6, seed = 1) {
+  /** `exec` sends a decision somewhere else instead of applying it (online: to the server). */
+  constructor(private match: PvpMatch, public side: number, public skill = 0.6, seed = 1, private exec?: (c: Cmd) => void) {
     this.rng = mulberry32(seed * 31 + side);
+  }
+
+  private do(c: Cmd): boolean {
+    if (this.exec) { this.exec(c); return true; }
+    return applyCmd(this.match, this.side, c);
   }
 
   update(dt: number) {
@@ -48,21 +55,21 @@ export class PvpBot {
 
     // 1. power up when it's the better deal (late game, or the board is full)
     const wantPower = s.compute >= powerCost && (full || powerCost <= summonCost * (1.6 + this.skill * 1.4)) && weight[bestType] >= 2;
-    if (wantPower && this.rng() < 0.4 + this.skill * 0.6) { if (m.powerUp(side, bestType)) return 'power'; }
+    if (wantPower && this.rng() < 0.4 + this.skill * 0.6) { if (this.do({ k: 'p', i: bestType })) return 'power'; }
 
     // 2. summon while there is room
-    if (!full && s.compute >= summonCost) { if (m.summon(side)) return 'summon'; }
+    if (!full && s.compute >= summonCost) { if (this.do({ k: 's' })) return 'summon'; }
 
     // 3. merge: always when the board is full, otherwise sometimes, to climb ranks
     const nearlyFull = m.freeSlots(side).length <= 1 && s.compute < summonCost;
     if (pairs.length && (full || (nearlyFull && this.rng() < this.skill))) {
       // a skilled bot avoids merging away its support units
       const pick = this.skill > 0.5 ? pairs.find(([a]) => a.def.kind !== 'support') ?? pairs[0] : pairs[Math.floor(this.rng() * pairs.length)];
-      if (m.merge(pick[0], pick[1])) return 'merge';
+      if (this.do({ k: 'm', a: pick[0].id, b: pick[1].id })) return 'merge';
     }
 
     // 4. full board, no pairs: power up anything affordable
-    if (full && s.compute >= powerCost) { if (m.powerUp(side, bestType)) return 'power'; }
+    if (full && s.compute >= powerCost) { if (this.do({ k: 'p', i: bestType })) return 'power'; }
     return null;
   }
 }

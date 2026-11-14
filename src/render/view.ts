@@ -18,6 +18,32 @@ const HOSTILE = 0xff2d55;
 const GOLD = 0xffd166;
 /** Visual-only scale-up so towers and enemies read well on a phone. */
 export const TOWER_SCALE = 1.22, ENEMY_SCALE = 1.2;
+/** Duels pack 15 units per player into a small board: smaller units keep every cell and its rank badge readable. */
+const DUEL_TOWER_SCALE = 0.86, DUEL_ENEMY_SCALE = 0.62;
+
+/** Rank badges for duel units: a dark disc with a big number, coloured by rank tier. Cached per rank. */
+const badgeTex = new Map<number, THREE.CanvasTexture>();
+export const RANK_COLORS = ['#9fe8ff', '#9fe8ff', '#7cf0b4', '#7cf0b4', '#d27bff', '#ffd166', '#ff8a5c'];
+function rankBadge(rank: number): THREE.CanvasTexture {
+  let t = badgeTex.get(rank);
+  if (t) return t;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d')!;
+  const col = RANK_COLORS[Math.min(6, rank - 1)];
+  g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(6, 9, 16, 0.92)'; g.fill();
+  g.lineWidth = 9; g.strokeStyle = col; g.stroke();
+  g.fillStyle = col;
+  g.font = '800 78px system-ui, -apple-system, "Segoe UI", sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(rank), 64, 69);
+  t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  badgeTex.set(rank, t);
+  return t;
+}
 
 const easeOutBack = (t: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 
@@ -30,7 +56,6 @@ export class TowerVis {
   model: TowerModel;
   parts: { mesh: THREE.Mesh; spin: [number, number, number]; bob: number; bobSpeed: number; py: number }[] = [];
   yaw = 0; recoil = 0; flash = 0; activity = 0; level = 1; rank = 0;
-  private rankPips: THREE.Mesh | null = null;
   private pips: THREE.Mesh | null = null;
   seed = Math.random() * 10;
 
@@ -77,25 +102,8 @@ export class TowerVis {
     this.mat.u.uGlow.value = 1 + (level - 1) * 0.22;
   }
 
-  /** Duel merge rank: a row of dots on the front of the base, gold from rank 6. */
-  setRank(rank: number) {
-    if (rank === this.rank) return;
-    this.rank = rank;
-    if (this.rankPips) { this.group.remove(this.rankPips); this.rankPips.geometry.dispose(); this.rankPips = null; }
-    const b = new Builder();
-    const col = rank >= 6 ? 0xffd166 : rank >= 4 ? 0xd27bff : 0x9fe8ff;
-    // dots on an arc around the front of the base, readable from the duel camera
-    const spread = Math.min(1.9, 0.38 * (rank - 1));
-    for (let i = 0; i < rank; i++) {
-      const a = rank === 1 ? 0 : -spread / 2 + (spread * i) / (rank - 1);
-      b.add(oct(0.075), { c: col, e: 3.2, flat: true, p: [Math.sin(a) * 0.5, 0.16, Math.cos(a) * 0.5], s: [1, 1.15, 1] });
-      b.add(cyl(0.05, 0.065, 0.1, 8), { c: 0x0b0f18, m: 0.6, ro: 0.4, p: [Math.sin(a) * 0.5, 0.06, Math.cos(a) * 0.5] });
-    }
-    if (rank >= 6) b.add(tor(0.58, 0.016, 6, 48), { c: 0xffd166, e: 2.6, p: [0, 0.05, 0], r: [Math.PI / 2, 0, 0] });
-    this.rankPips = new THREE.Mesh(b.build('base')!, this.mat);
-    this.group.add(this.rankPips);
-    this.mat.u.uGlow.value = 1 + (rank - 1) * 0.12;
-  }
+  /** Duel merge rank (shown by the view's rank badge; the model itself stays clean). */
+  setRank(rank: number) { this.rank = rank; }
 
   animate(dt: number, time: number) {
     const m = this.model;
@@ -161,6 +169,9 @@ export class GameView {
   dimOthers = false;
   /** Duels: show kill rewards on both lanes (local duel) or only yours. */
   showAllGains = false;
+  /** Duels: which lane is the viewer's (online player 2 plays the top lane, seen from the other end). */
+  mySide = 0;
+  private badges = new Map<number, THREE.Sprite>();
   root = new THREE.Group();
   onEvent: ((ev: SimEvent) => void) | null = null;
   private healthBarCap = 400;
@@ -273,9 +284,9 @@ export class GameView {
       fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vUv; varying vec3 vC;
         void main(){ float r = length(vUv - 0.5) * 3.0;
           float ao = smoothstep(1.15, 0.35, r) * 0.6;
-          float ring = smoothstep(0.07, 0.0, abs(r - 0.97)) * (0.75 + 0.25 * sin(uTime * 2.0));
-          float halo = smoothstep(1.45, 0.9, r) * smoothstep(0.5, 0.95, r) * 0.16;
-          gl_FragColor = vec4(vC * (ring * 1.5 + halo), ao); }`,
+          float ring = smoothstep(0.05, 0.0, abs(r - 0.97));
+          float halo = smoothstep(1.45, 0.9, r) * smoothstep(0.5, 0.95, r) * 0.05;
+          gl_FragColor = vec4(vC * (ring * 0.55 + halo), ao); }`,
     }), 96);
     this.pads.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(96 * 3), 3);
     this.pads.count = 0; this.pads.frustumCulled = false; this.pads.renderOrder = 7;
@@ -340,6 +351,8 @@ export class GameView {
   unload() {
     for (const v of this.towers.values()) { this.root.remove(v.group); v.dispose(); }
     this.towers.clear();
+    for (const b of this.badges.values()) { this.root.remove(b); b.material.dispose(); }
+    this.badges.clear();
     for (const b of this.batches.values()) { this.root.remove(b.mesh); b.mesh.geometry.dispose(); (b.mesh.material as THREE.Material).dispose(); }
     this.batches.clear();
     for (const a of this.auras.values()) { this.root.remove(a); (a.material as THREE.Material).dispose(); }
@@ -528,7 +541,7 @@ export class GameView {
         const s = e.def.size;
         fx.burst(e.x, e.y + 0.25 * s, e.z, e.def.color, Math.round(6 + s * 8), 2.2 + s, 0.09 + s * 0.03, 0.5, 5, 0.5);
         fx.flash(e.x, e.y + 0.25 * s, e.z, e.def.color, 0.8 + s * 0.9, 0.2, 1.3);
-        if (!this.sim.sided || e.pathIdx === 0 || this.showAllGains) fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold');
+        if (!this.sim.sided || e.pathIdx === this.mySide || this.showAllGains) fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold');
         this.ghosts.push({ type: e.def.id, x: e.x, y: e.y, z: e.z, yaw: Math.atan2(e.dx, e.dz), scale: s, t: 0 });
         if (e.def.boss || s >= 1.6) {
           fx.explosion(e.x, e.y + 0.4, e.z, e.def.color, s * 1.3, true);
@@ -619,13 +632,15 @@ export class GameView {
         if (this.slots.visible) this.showSlots(true);
       }
       const age = sim.time - t.born;
-      const sc = (age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1) * (1 + (t.level - 1) * 0.07) * (1 + (t.rank - 1) * 0.035) * TOWER_SCALE;
+      const pop = age < 0.4 ? Math.max(0.01, easeOutBack(Math.min(1, age / 0.4))) : 1;
+      const sc = pop * (sim.sided ? (1 + (t.rank - 1) * 0.02) * DUEL_TOWER_SCALE : (1 + (t.level - 1) * 0.07) * TOWER_SCALE);
       v.group.scale.setScalar(sc);
       if (sim.sided) {
         v.setRank(t.rank);
         const dg = this.drags.get(t.id);
         if (dg) v.group.position.set(dg.x, 0.5, dg.z);
         else v.group.position.set(t.x, 0, t.z);
+        this.badge(t, v.group.position, pop);
       }
       if (v.model.aims && (t.aimX || t.aimZ)) {
         const want = Math.atan2(t.aimX, t.aimZ);
@@ -675,6 +690,8 @@ export class GameView {
     for (const [id, v] of this.towers) {
       if (seen.has(id)) continue;
       this.root.remove(v.group); v.dispose(); this.towers.delete(id);
+      const bd = this.badges.get(id);
+      if (bd) { this.root.remove(bd); bd.material.dispose(); this.badges.delete(id); }
       const a = this.auras.get(id);
       if (a) { this.root.remove(a); (a.material as THREE.Material).dispose(); this.auras.delete(id); }
       if (this.selected && this.selected.id === id) this.select(null);
@@ -701,6 +718,7 @@ export class GameView {
       for (const t of sim.towers) {
         if (pn >= 96) break;
         _m.makeTranslation(t.x, 0.014, t.z);
+        if (sim.sided) _m.scale(_s.setScalar(0.78));
         this.pads.setMatrixAt(pn, _m);
         this.pads.setColorAt(pn, _c.setHex(FAMILY_INFO[t.def.family].color));
         pn++;
@@ -737,6 +755,22 @@ export class GameView {
     fx.update(dt);
   }
 
+  /** A rank badge at the near corner of a duel unit's cell (near = toward the camera, which turns round for player 2). */
+  private badge(t: Tower, at: THREE.Vector3, pop: number) {
+    let b = this.badges.get(t.id);
+    if (!b) {
+      b = new THREE.Sprite(new THREE.SpriteMaterial({ map: rankBadge(t.rank), depthTest: false, depthWrite: false, transparent: true, toneMapped: false, color: 0xd8d8d8 }));
+      b.renderOrder = 30;
+      b.userData.rank = t.rank;
+      this.root.add(b);
+      this.badges.set(t.id, b);
+    }
+    if (b.userData.rank !== t.rank) { b.material.map = rankBadge(t.rank); b.material.needsUpdate = true; b.userData.rank = t.rank; }
+    const f = Math.cos(this.engine.azimuth) >= 0 ? 1 : -1;
+    b.position.set(at.x - 0.3 * f, at.y + 0.16, at.z + 0.3 * f);
+    b.scale.setScalar(0.36 * Math.min(1, pop));
+  }
+
   private syncEnemies(dt: number, time: number) {
     const sim = this.sim;
     for (const b of this.batches.values()) b.n = 0;
@@ -769,7 +803,7 @@ export class GameView {
       if (e.stunT > 0) { r = 1.35; g = 1.3; bl = 0.55; }
       else if (e.slowT > 0) { r = 0.6; g = 0.85; bl = 1.5; }
       else if (e.dotT > 0) { r = 1.5; g = 0.8; bl = 0.55; }
-      const es = e.def.size * ENEMY_SCALE;
+      const es = e.def.size * (sim.sided ? DUEL_ENEMY_SCALE : ENEMY_SCALE);
       put(b, e.x, y, e.z, yaw, roll, 0, es * grow, flash, e.phased ? 0.28 : 1, ph, r, g, bl);
       if (e.dotT > 0 && Math.random() < dt * 10) this.fx.trail(e.x + (Math.random() - 0.5) * 0.2, y + e.def.size * 0.3, e.z + (Math.random() - 0.5) * 0.2, 0xff8a3a, 0.1, 0.4, 1.5);
       if (e.slowT > 0 && Math.random() < dt * 5) this.fx.trail(e.x + (Math.random() - 0.5) * 0.2, y + e.def.size * 0.2, e.z + (Math.random() - 0.5) * 0.2, 0x66b8ff, 0.08, 0.4, 1.2);
@@ -794,7 +828,7 @@ export class GameView {
       gst.t += dt / 0.2;
       if (gst.t >= 1) { this.ghosts.splice(i, 1); continue; }
       const b = this.batch(gst.type);
-      put(b, gst.x, gst.y + b.model.anim.hover + gst.t * 0.15, gst.z, gst.yaw, 0, 0, gst.scale * ENEMY_SCALE * (1 + gst.t * 0.45), 1.2, 1 - gst.t, 0, 1, 1, 1);
+      put(b, gst.x, gst.y + b.model.anim.hover + gst.t * 0.15, gst.z, gst.yaw, 0, 0, gst.scale * (sim.sided ? DUEL_ENEMY_SCALE : ENEMY_SCALE) * (1 + gst.t * 0.45), 1.2, 1 - gst.t, 0, 1, 1, 1);
     }
     for (const b of this.batches.values()) {
       b.mesh.count = b.n;

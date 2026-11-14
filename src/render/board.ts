@@ -83,6 +83,7 @@ export class Board {
   group = new THREE.Group();
   private disposables: { dispose(): void }[] = [];
   private pathMat: THREE.ShaderMaterial;
+  private pathMats: THREE.ShaderMaterial[] = [];
   private skyMat: THREE.ShaderMaterial;
   private portalMats: THREE.ShaderMaterial[] = [];
   private core = new THREE.Group();
@@ -185,7 +186,7 @@ export class Board {
       const tx = tileTextures(theme.tileAccent, v);
       const mat = this.own(new THREE.MeshStandardMaterial({
         map: tx.map, emissiveMap: tx.emissiveMap, bumpMap: tx.bumpMap, bumpScale: 2.2,
-        emissive: new THREE.Color(theme.tileAccent), emissiveIntensity: 0.5, metalness: 0.4, roughness: 0.52, envMapIntensity: 0.9,
+        emissive: new THREE.Color(theme.tileAccent), emissiveIntensity: 0.22, metalness: 0.4, roughness: 0.52, envMapIntensity: 0.9,
       }));
       this.own(tx.map); this.own(tx.emissiveMap); this.own(tx.bumpMap);
       this.tileMats.push(mat);
@@ -210,21 +211,23 @@ export class Board {
       transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8,
       blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(this.theme.pathGlow) }, uBoost: { value: 0 } },
+      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(this.theme.pathGlow) }, uBoost: { value: 0 }, uLen: { value: 10 } },
       vertexShader: /* glsl */ `attribute float aCurve; varying vec2 vUv; varying float vCurve; void main(){ vUv = uv; vCurve = aCurve; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime, uBoost; uniform vec3 uColor; varying vec2 vUv; varying float vCurve;
+        uniform float uTime, uBoost, uLen; uniform vec3 uColor; varying vec2 vUv; varying float vCurve;
         void main(){
           float u = vUv.x, v = vUv.y;
           float cu = abs(u - 0.5);
-          float edge = smoothstep(0.035, 0.0, abs(cu - 0.44)) * 1.5;
-          float chev = fract(v * 1.25 + cu * 1.1 - uTime * 0.9);
-          float arrows = smoothstep(0.16, 0.0, chev) * smoothstep(0.36, 0.3, cu) * 0.55;
-          float pulse = pow(max(0.0, sin(v * 0.9 - uTime * 2.6)), 12.0) * smoothstep(0.46, 0.2, cu) * (0.35 + uBoost);
-          float base = 0.06 * smoothstep(0.5, 0.2, cu);
-          float dots = smoothstep(0.03, 0.0, abs(cu - 0.36)) * step(0.5, fract(v * 4.0)) * 0.35;
+          // quiet lane: thin edges and a faint floor tint
+          float edge = smoothstep(0.03, 0.0, abs(cu - 0.44)) * 0.5;
+          float base = 0.035 * smoothstep(0.5, 0.2, cu);
+          // one small arrow walks the lane every few seconds to show which way enemies go
+          float speed = 2.4, period = uLen / speed + 2.5;
+          float head = mod(uTime, period) * speed;
+          float d = head - v - cu * 0.75;
           float straight = 1.0 - clamp(vCurve, 0.0, 1.0); // lengthwise patterns shear across corner triangles, so fade them there
-          vec3 col = uColor * (edge + (arrows + dots) * straight + pulse + base);
+          float arrow = smoothstep(0.075, 0.0, abs(d)) * step(cu, 0.19) * smoothstep(0.0, 0.8, v) * smoothstep(uLen, uLen - 1.0, v) * straight;
+          vec3 col = uColor * (edge + base) + mix(uColor, vec3(1.0), 0.35) * arrow * 0.7;
           gl_FragColor = vec4(col, 1.0);
         }`,
     }));
@@ -269,7 +272,10 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       g.setAttribute('aCurve', new THREE.BufferAttribute(curve, 1));
       g.setIndex(idx);
-      const mesh = new THREE.Mesh(g, this.pathMat);
+      const mat = this.own(this.pathMat.clone());
+      mat.uniforms.uLen.value = p.cum[n - 1];
+      this.pathMats.push(mat);
+      const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 1;
       this.group.add(mesh);
     });
@@ -282,8 +288,8 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     const b = new Builder();
     const hull: Mat = { c: new THREE.Color(theme.tile).multiplyScalar(0.55).getHex(), m: 0.85, ro: 0.4 };
     const hull2: Mat = { c: new THREE.Color(theme.tile).multiplyScalar(0.9).getHex(), m: 0.8, ro: 0.35 };
-    const glow: Mat = { c: theme.tileAccent, e: 2.4 };
-    const glow2: Mat = { c: theme.rim, e: 2.2 };
+    const glow: Mat = { c: theme.tileAccent, e: 1.1 };
+    const glow2: Mat = { c: theme.rim, e: 1.0 };
     b.add(rbox(W + 0.9, 0.5, D + 0.9, 0.1), { ...hull, p: [0, -0.49, 0] });
     b.add(rbox(W + 0.5, 0.2, D + 0.5, 0.05), { ...hull2, p: [0, -0.31, 0] });
     // rim light strips
@@ -332,7 +338,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     const { sim, theme } = this;
     const b = new Builder();
     const rng = mulberry32(sim.level.seed + 55);
-    const acc: Mat = { c: theme.tileAccent, e: 2.3 }, acc2: Mat = { c: theme.rim, e: 2.3 };
+    const acc: Mat = { c: theme.tileAccent, e: 1.1 }, acc2: Mat = { c: theme.rim, e: 1.1 };
     let any = false;
     for (let r = 0; r < sim.rows; r++) for (let c = 0; c < sim.cols; c++) {
       if (sim.grid[r * sim.cols + c] !== CELL_BLOCKED) continue;
@@ -394,10 +400,10 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
       const ang = Math.atan2(p.dx, p.dz);
       b.at('base').xf([p.x, 0, p.z], [0, ang, 0]);
       b.add(tor(0.46, 0.06, 8, 28), { c: 0x16090f, m: 0.9, ro: 0.25, p: [0, 0.42, -0.1] });
-      b.add(tor(0.46, 0.022, 6, 28), { c: hostile, e: 3, p: [0, 0.42, -0.04] });
+      b.add(tor(0.46, 0.022, 6, 28), { c: hostile, e: 1.4, p: [0, 0.42, -0.04] });
       for (const s of [-1, 1]) {
         b.add(rbox(0.16, 0.3, 0.26, 0.03), { c: 0x1c0d14, m: 0.85, ro: 0.3, p: [s * 0.44, 0.0, -0.1] });
-        b.add(box(0.03, 0.2, 0.2), { c: hostile, e: 2.4, p: [s * 0.525, 0.0, -0.1] });
+        b.add(box(0.03, 0.2, 0.2), { c: hostile, e: 1.2, p: [s * 0.525, 0.0, -0.1] });
         b.add(cone(0.05, 0.2, 5), { c: 0x16090f, m: 0.9, ro: 0.25, flat: true, p: [s * 0.36, 0.9, -0.1], r: [0, 0, -s * 0.5] });
       }
       const mat = this.own(additive({
@@ -412,7 +418,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
             float sw2 = sin(a * 5.0 - r * 14.0 + uTime * 2.5) * 0.5 + 0.5;
             float m = smoothstep(1.0, 0.75, r);
             vec3 col = mix(uColor, uColor2, sw2) * (0.35 + sw * 1.4) * m + vec3(1.0, 0.8, 0.8) * smoothstep(0.35, 0.0, r) * 1.2;
-            gl_FragColor = vec4(col * (0.7 + 0.3 * sin(uTime * 7.0)), 1.0);
+            gl_FragColor = vec4(col * 0.42, 1.0);
           }`,
       }));
       this.portalMats.push(mat);
@@ -431,7 +437,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     const { core } = this.sim;
     this.own(this.coreMat);
     const b = new Builder();
-    const metal: Mat = { c: 0x26303e, m: 0.9, ro: 0.28 }, trim: Mat = { c: 0xcfe0f5, m: 1, ro: 0.15 }, gl: Mat = { c: 0x5ff2ff, e: 2.8 };
+    const metal: Mat = { c: 0x26303e, m: 0.9, ro: 0.28 }, trim: Mat = { c: 0xcfe0f5, m: 1, ro: 0.15 }, gl: Mat = { c: 0x5ff2ff, e: 1.4 };
     b.add(cyl(0.44, 0.48, 0.12, 8), { ...metal, flat: true, p: [0, -0.08, 0] });
     b.add(tor(0.42, 0.02, 6, 8), { ...gl, p: [0, -0.02, 0], r: [P2, 0, 0] });
     b.ring(4, 0.34, () => box(0.07, 0.4, 0.1), { ...metal, p: [0, 0.16, 0], r: [0.35, 0, 0] });
@@ -440,7 +446,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     baseMesh.castShadow = true;
     this.core.add(baseMesh);
     const c2 = new Builder();
-    c2.add(ico(0.24, 0), { c: 0xbff8ff, e: 3.2, flat: true, s: [1, 1.35, 1] });
+    c2.add(ico(0.24, 0), { c: 0xbff8ff, e: 1.6, flat: true, s: [1, 1.35, 1] });
     c2.add(ico(0.3, 1), { c: 0x5ff2ff, e: 0.6, m: 0.3, ro: 0.05, flat: true, s: [0.6, 0.6, 0.6], p: [0, 0, 0] });
     this.coreCrystal = new THREE.Mesh(this.own(c2.build('base')!), this.coreMat);
     this.coreCrystal.position.y = 0.72;
@@ -460,8 +466,9 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
       fragmentShader: 'uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; void main(){ float f = pow(clamp(abs(normalize(vN).z), 0.0, 1.0), 1.5); gl_FragColor = vec4(uColor * f * pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.2) * 0.55, 1.0); }',
     })));
     beam.position.y = 4.1;
+    beam.visible = false; // the tall light shaft read as glare on a phone
     this.core.add(beam);
-    this.coreLight = new THREE.PointLight(0x5ff2ff, 4, 6, 1.5);
+    this.coreLight = new THREE.PointLight(0x5ff2ff, 1.6, 5, 1.5);
     this.coreLight.position.y = 0.9;
     this.core.add(this.coreLight);
     this.core.position.set(core.x, 0, core.z);
@@ -481,9 +488,8 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     if (voids.length) {
       const z = this.sim.cellZ(voids[0]), W = this.sim.cols;
       const d = new Builder();
-      d.add(box(W + 0.4, 0.05, 0.05), { c: 0xdfe8ff, e: 2.2, p: [0, -0.02, z] });
-      for (const s of [-1, 1]) d.add(box(W + 0.4, 0.03, 0.02), { c: this.theme.tileAccent, e: 2.4, p: [0, -0.05, z + s * 0.32] });
-      for (let i = 0; i < 9; i++) d.add(oct(0.06), { c: this.theme.rim, e: 2.6, flat: true, p: [(i - 4) * (W / 9), 0.02, z], s: [1.4, 0.4, 0.6] });
+      d.add(box(W + 0.4, 0.05, 0.05), { c: 0xdfe8ff, e: 0.7, p: [0, -0.02, z] });
+      for (const s of [-1, 1]) d.add(box(W + 0.4, 0.03, 0.02), { c: this.theme.tileAccent, e: 0.6, p: [0, -0.05, z + s * 0.32] });
       const strip = new THREE.Mesh(this.own(d.build('base')!), this.own(makePbr()));
       this.group.add(strip);
     }
@@ -537,7 +543,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
         void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0; float a = atan(p.y, p.x);
           float g = pow(max(0.0, 1.0 - r), 2.4);
           float rays = 0.6 + 0.4 * sin(a * 9.0 + uTime * 0.3) * sin(a * 4.0 - uTime * 0.2);
-          gl_FragColor = vec4(mix(uColor, uColor2, r) * g * rays * 0.55, 1.0); }`,
+          gl_FragColor = vec4(mix(uColor, uColor2, r) * g * rays * 0.18, 1.0); }`,
     }));
     const under = new THREE.Mesh(this.own(new THREE.PlaneGeometry(46, 46)), this.underMat);
     under.rotation.x = -P2; under.position.y = -3.6;
@@ -554,7 +560,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
           float g = gridLine(p, 4.0) * 0.5 + gridLine(p, 20.0) * 0.8;
           float fade = smoothstep(150.0, 12.0, d);
           float pulse = 0.6 + 0.4 * sin(d * 0.15 - uTime * 0.8);
-          gl_FragColor = vec4(uColor * g * fade * pulse * 0.2, 1.0); }`,
+          gl_FragColor = vec4(uColor * g * fade * pulse * 0.08, 1.0); }`,
     }));
     const grid = new THREE.Mesh(this.own(new THREE.PlaneGeometry(400, 400)), this.gridMat);
     grid.rotation.x = -P2; grid.position.y = -26;
@@ -581,10 +587,10 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
               vec2 f = vec2(fract(side * 2.2), fract((vL.y + 0.5) * vS.y * 1.6));
               float lit = step(0.52, h21(cell + vId * 91.0)) * (0.6 + 0.4 * sin(uTime * (0.5 + h21(cell) * 2.0) + h21(cell.yx) * 30.0));
               float win = step(0.2, f.x) * step(f.x, 0.8) * step(0.35, f.y) * step(f.y, 0.7);
-              col += mix(uGlow, uGlow2, step(0.8, h21(cell * 1.7))) * win * lit * 0.9;
+              col += mix(uGlow, uGlow2, step(0.8, h21(cell * 1.7))) * win * lit * 0.35;
             } else {
               float e = max(abs(vL.x), abs(vL.z));
-              col += uGlow * smoothstep(0.44, 0.49, e) * 0.9;
+              col += uGlow * smoothstep(0.44, 0.49, e) * 0.35;
             }
             float fd = vD * 0.014; float fog = 1.0 - exp(-fd * fd);
             gl_FragColor = vec4(mix(col, uFog, clamp(fog, 0.0, 1.0)), 1.0);
@@ -628,7 +634,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
           vA = (0.35 + 0.65 * sin(uTime * (0.8 + aSeed.x) + aSeed.x * 50.0)) * smoothstep(-6.0, -3.0, p.y) * smoothstep(10.0, 6.0, p.y);
           vMix = aSeed.x; gl_Position = projectionMatrix * mv; }`,
       fragmentShader: /* glsl */ `uniform vec3 uColor, uColor2; varying float vA; varying float vMix;
-        void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(mix(uColor, uColor2, step(0.6, vMix)) * a * a * max(vA, 0.0) * 1.3, 1.0); }`,
+        void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(mix(uColor, uColor2, step(0.6, vMix)) * a * a * max(vA, 0.0) * 0.45, 1.0); }`,
     }));
     this.motes = new THREE.Points(mg, this.moteMat);
     this.motes.frustumCulled = false;
@@ -636,9 +642,8 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
   }
 
   update(dt: number, time: number, waveActive: boolean) {
-    this.pathMat.uniforms.uTime.value = time;
-    const pb = this.pathMat.uniforms.uBoost;
-    pb.value += ((waveActive ? 0.5 : 0) - pb.value) * Math.min(1, dt * 2);
+    for (const m of this.pathMats) m.uniforms.uTime.value = time;
+    void waveActive;
     this.skyMat.uniforms.uTime.value = time;
     this.underMat.uniforms.uTime.value = time;
     this.gridMat.uniforms.uTime.value = time;
@@ -653,7 +658,7 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     this.coreFlash = Math.max(0, this.coreFlash - dt * 2.5);
     this.coreMat.u.uFx.value.x = this.coreFlash * 1.5;
     this.coreMat.u.uGlow.value = 1 + Math.sin(time * 2.4) * 0.15;
-    this.coreLight.intensity = 4 + Math.sin(time * 2.4) * 0.8 + this.coreFlash * 14;
+    this.coreLight.intensity = 1.6 + Math.sin(time * 2.4) * 0.2 + this.coreFlash * 8;
     this.coreLight.color.setHex(this.coreFlash > 0.05 ? 0xff5566 : 0x5ff2ff);
     if (this.drift) this.drift.rotation.y = time * 0.004;
     if (this.driftMat) this.driftMat.uniforms.uTime.value = time;

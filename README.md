@@ -105,8 +105,50 @@ but Weights for them are much rarer.
 Wins also pay a **Checkpoint** (reward chest; at least one Epic every 10 wins) full of Tokens and Weights
 for units available in your arena.
 
-Duels run entirely on the device: ranked opponents are AI rivals, not other people online (that would need a
-game server). Local duel is the way to play another person.
+Ranked opponents are AI rivals. To play people: **Local duel** (two players, one phone) or **Play a friend
+online** (below).
+
+## Play a friend online
+
+One player creates a room and gets a 4-letter code (or an invite link); the friend joins with it. Both press
+**Ready**, a shared 5-second countdown starts, and the duel begins on both phones at the same moment. Friend
+duels use your own deck and levels; they cost no Limits and don't change your rating.
+
+### Run the server
+
+```bash
+npm install
+npm run build      # the game, into dist/
+npm run server     # game + duel server on http://localhost:8787 (PORT=… to change)
+```
+
+The server also serves the game, so friends just open its address in a browser. On home Wi-Fi that is
+`http://<your computer's IP>:8787`. For play over the internet, deploy it anywhere that runs Node 20+ or a
+container and gives you HTTPS (WebSockets ride on the same port):
+
+```bash
+docker build -t frendstd . && docker run -p 8787:8787 frendstd
+```
+
+Any host that runs a Dockerfile works (Fly.io, Render, Railway, a VPS behind Caddy…). A copy of the game that
+isn't served by the server (the single HTML file, a phone app build) asks for the server address the first
+time, or takes it from `?server=wss://your-host` or `VITE_SERVER_URL` at build time. During development,
+`npm run dev` forwards `/ws` to a server running on port 8787.
+
+### How it stays fair and in sync
+
+Duels use deterministic lockstep (`src/net/protocol.ts`, `server/index.ts`):
+
+- Both phones and the server build the same match from the same seed and decks, and advance it in fixed
+  1/60 s ticks. Game logic only uses arithmetic that every JavaScript engine rounds identically
+  (`src/sim/dmath.ts` replaces `Math.sin`, `pow`, `hypot`… whose last bit can differ between Chrome and Safari).
+- A tap becomes a command. The server stamps it with the tick it takes effect (150 ms ahead, to cover the
+  network) and relays it to both players together with "everything up to tick N is final". Nobody simulates
+  past N, so both phones always apply the same inputs at the same moment.
+- The server runs its own copy of every match: it decides the winner, rejects invalid or spoofed commands,
+  and compares state hashes the phones send every 2 seconds.
+- A dropped player keeps their seat for 30 seconds. Reconnecting (even after a full reload) replays the
+  match's input log and fast-forwards to the present; after 30 seconds away, they forfeit.
 
 ## How it's built
 
@@ -122,12 +164,13 @@ game server). Local duel is the way to play another person.
 | `src/ui/`, `src/style.css` | Menus and HUD (plain DOM) |
 | `src/audio/audio.ts` | Synthesized sound effects and generative music (WebAudio) |
 | `src/pvp/` | Duels: roster logic, signatures and talents, economy, profile, match engine, AI rival, battle HUD and screens |
+| `src/net/`, `server/` | Online duels: lockstep protocol, client connection with clock sync and resume, the room/relay/referee server |
 | `tests/` | Unit tests for the duel rules, economy, abilities and bosses (`npm test`) |
 
 ### Tests and balance tools
 
 ```bash
-npm test                 # duel rules, economy, profile, abilities, bosses, AI-vs-AI fairness
+npm test                 # duel rules, economy, profile, abilities, bosses, AI-vs-AI fairness, online lockstep + server
 npm run duel -- 30       # 30 headless duels between AI rivals
 ```
 

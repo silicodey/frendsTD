@@ -18,6 +18,8 @@ import {
 } from './profile';
 import { PVP_UNITS, RARITY_INFO, isSignature, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, TALENT_LEVELS } from './signatures';
+import { OnlineSession, defaultServer, inviteLink, normalizeServer, pendingResume, saveServer, type NetEvent } from '../net/client';
+import { cleanCode, cleanName } from '../net/protocol';
 
 export interface ScreensHost {
   save: Save; ui: UI; audio: AudioEngine;
@@ -27,6 +29,8 @@ export interface ScreensHost {
   duelResume(): void;
   duelForfeit(): void;
   renderNow(): void;
+  /** Seed of the online duel being played right now, if any. */
+  onlineSeed(): number | null;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -66,9 +70,40 @@ export class PvpScreens {
   private pickSlotFor: string | null = null;
   private timer = 0;
   private lastResult: MatchResult | null = null;
+  // online
+  private net: OnlineSession | null = null;
+  private joinCode = '';
+  private wantJoin = false;
+  private serverInput = '';
+  private onTimer = 0;
 
   constructor(private host: ScreensHost) {
     host.ui.extra = (act, arg, el) => this.onClick(act, arg, el);
+    // text fields on the online screens keep their value across re-renders
+    const menu = host.ui.menu;
+    menu.addEventListener('input', (e) => {
+      const el = e.target as HTMLInputElement;
+      if (el.id === 'on-code') { el.value = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); this.joinCode = el.value; }
+      else if (el.id === 'on-server') this.serverInput = el.value;
+    });
+    menu.addEventListener('change', (e) => {
+      const el = e.target as HTMLInputElement;
+      if (el.id === 'on-name') { this.p.name = cleanName(el.value); el.value = this.p.name; this.save(); this.net?.refreshHello(); }
+    });
+    menu.addEventListener('keydown', (e) => {
+      const el = e.target as HTMLElement;
+      if (e.key !== 'Enter') return;
+      if (el.id === 'on-code') this.onClick('pv-on-join', '', el);
+      else if (el.id === 'on-server') this.onClick('pv-on-connect', '', el);
+      else if (el.id === 'on-name') (el as HTMLInputElement).blur();
+    });
+  }
+
+  /** At startup: an invite link opens its room; a reloaded tab rejoins the match it was in. */
+  boot(room: string | null) {
+    const code = cleanCode(room);
+    if (code) { this.online(code); return; }
+    if (pendingResume()) this.online();
   }
 
   private get p() { return this.host.save.data.pvp; }
@@ -136,6 +171,7 @@ export class PvpScreens {
             ? `<button class="btn primary big wide" data-act="pv-battle">${ICON.swords}<span>Battle</span><em>${ICON.limit}1</em></button>`
             : `<div class="limit-out">Limit reached · next in <b>${mmss(nextLimitIn(l, Date.now()))}</b></div>
                <button class="btn primary big wide ${p.resets < 1 ? 'disabled' : ''}" data-act="pv-reset">${ICON.reset}<span>Reset your Limits</span><em>${ICON.reset}1</em></button>`}
+          <button class="btn wide friend" data-act="pv-online">${ICON.globe}<span>Play a friend online</span></button>
           <div class="row2">
             <button class="btn wide" data-act="pv-practice">${ICON.target}<span>Practice</span></button>
             <button class="btn wide" data-act="pv-local">${ICON.duo}<span>Local duel</span></button>
@@ -321,6 +357,7 @@ export class PvpScreens {
 
   /** Called by the duel when it finishes. */
   finished(match: PvpMatch, opts: DuelOptions) {
+    if (opts.mode === 'online') { this.finishedOnline(match, opts); return; }
     const p = this.p, now = Date.now();
     const score = match.winner === 0 ? 1 : match.winner === -1 ? 0.5 : 0;
     const ui = this.host.ui;
@@ -355,12 +392,28 @@ export class PvpScreens {
     this.host.renderNow();
   }
 
-  private statsLine(match: PvpMatch, local = false) {
+  private finishedOnline(match: PvpMatch, opts: DuelOptions) {
+    const me = opts.online!.side, foe = 1 - me, ui = this.host.ui;
+    const won = match.winner === me, draw = match.winner === -1;
+    if (won) this.host.audio.win(); else if (!draw) this.host.audio.lose();
+    const rival = match.sides[foe].name;
+    const r = this.net?.result;
+    const why = r?.reason === 'forfeit' ? (won ? `${rival} conceded.` : 'You conceded.') : '';
+    ui.openModal(`<div class="sheet result ${won || draw ? 'won' : 'lost'}" data-noclose>
+      <div class="eyebrow">Friend duel · vs ${esc(rival)}</div><h2>${draw ? 'Draw' : won ? 'Victory' : 'Defeat'}</h2>
+      ${why ? `<p class="dim center">${esc(why)}</p>` : ''}
+      ${this.statsLine(match, false, me)}
+      <div class="btn-col"><button class="btn primary big wide" data-act="pv-on-rematch">${ICON.restart}<span>Rematch</span></button>
+      <button class="btn wide" data-act="pv-on-leave">${ICON.back}<span>Leave room</span></button></div></div>`);
+    this.host.renderNow();
+  }
+
+  private statsLine(match: PvpMatch, local = false, side = 0) {
     const row = (side: number, label = '') => {
       const s = match.sides[side];
       return `<div class="meta-row center">${label ? `<span class="pill who">${esc(label)}</span>` : `<span class="pill">Wave <b>${match.wave}</b></span>`}<span class="pill">${s.kills} ${s.kills === 1 ? 'kill' : 'kills'}</span><span class="pill">${s.merges} ${s.merges === 1 ? 'merge' : 'merges'}</span><span class="pill">Top rank <b>${s.maxRank}</b></span></div>`;
     };
-    return local ? `${row(0, match.sides[0].name)}${row(1, match.sides[1].name)}` : row(0);
+    return local ? `${row(0, match.sides[0].name)}${row(1, match.sides[1].name)}` : row(side);
   }
 
   private openCheckpoint(el: HTMLElement) {
@@ -372,6 +425,177 @@ export class PvpScreens {
       : `<div class="lcard tok" style="animation-delay:0.05s"><span>${ICON.token}</span><b>+${w.n}</b><i>Tokens</i></div>`).join('')}</div>`;
     this.host.audio.upgrade();
     this.host.renderNow();
+  }
+
+  // ------------------------------------------------------------------ online: play a friend
+  private playerName() {
+    if (!this.p.name) { this.p.name = `Player${100 + Math.floor(Math.random() * 900)}`; this.save(); }
+    return this.p.name;
+  }
+
+  /** Open the online screens (optionally joining a room code from an invite). */
+  online(join?: string) {
+    if (join) { this.joinCode = join; this.wantJoin = true; }
+    const url = this.net?.url || defaultServer();
+    if (!url) { this.serverForm(); return; }
+    this.ensureNet(url);
+    this.onlineScreen();
+  }
+
+  private ensureNet(url: string) {
+    if (this.net && this.net.url === url) { if (this.net.status === 'offline') { this.net.error = null; this.net.connect(); } return; }
+    this.net?.close();
+    const net = new OnlineSession(url, () => ({ name: this.playerName(), deck: deckCards(this.p) }));
+    this.net = net;
+    net.on((e) => this.onNet(e));
+    net.connect();
+  }
+
+  private onNet(e: NetEvent) {
+    const net = this.net;
+    if (!net) return;
+    if (e === 'start' || e === 'sync') { this.startOnlineDuel(); return; }
+    if (e === 'status' && net.status === 'online' && this.wantJoin && !net.code) { const c = cleanCode(this.joinCode); if (c) net.join(c); }
+    if (e === 'room') this.wantJoin = false;
+    if (e === 'error') {
+      this.wantJoin = false;
+      if (net.error && this.host.onlineSeed() === null) this.host.ui.say(net.error.msg);
+    }
+    if (this.host.onlineSeed() === null && !this.host.ui.menu.hidden && this.host.ui.menu.dataset.view === 'pvp-online') this.onlineScreen();
+  }
+
+  private startOnlineDuel() {
+    const net = this.net!, info = net.info!, side = net.you;
+    if (side < 0) return;
+    if (this.host.onlineSeed() === info.seed) return; // already playing this match (a reconnect just refilled the inputs)
+    clearInterval(this.onTimer);
+    const opts: DuelOptions = {
+      mode: 'online', me: info.setups[side], rival: info.setups[1 - side], rivalSkill: 0, theme: info.theme, seed: info.seed,
+      online: { session: net, side },
+    };
+    this.host.ui.menu.hidden = true;
+    this.host.ui.menu.innerHTML = '';
+    this.host.ui.menu.dataset.view = '';
+    this.host.startDuel(opts);
+  }
+
+  private serverForm() {
+    this.serverInput ||= this.net?.url || defaultServer();
+    this.screen('pvp-online', `
+      <header class="bar"><button class="icon-btn" data-act="pv-on-back" aria-label="Back">${ICON.back}</button><h1>Play a friend</h1></header>
+      <div class="scroll on-wrap">
+        <section class="on-card">
+          <span class="eyebrow">Duel server</span>
+          <p class="dim">Online duels go through a small game server. Enter its address: whoever set it up can share it (for example <b>wss://frendstd.example.com</b> or <b>192.168.1.20:8787</b> on home Wi-Fi).</p>
+          <input id="on-server" class="field" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="wss://your-server.example.com" value="${esc(this.serverInput)}">
+          <button class="btn primary big wide" data-act="pv-on-connect">${ICON.globe}<span>Connect</span></button>
+          <p class="dim small">Running the server yourself: <code>npm run build</code>, then <code>npm run server</code>. It also serves the game, so friends can just open its address in a browser.</p>
+        </section>
+      </div>`);
+  }
+
+  private onlineScreen() {
+    const net = this.net;
+    if (!net) { this.serverForm(); return; }
+    clearInterval(this.onTimer);
+    const host = (() => { try { return new URL(net.url).host; } catch { return net.url; } })();
+    const head = (title: string) => `<header class="bar"><button class="icon-btn" data-act="pv-on-back" aria-label="Back">${ICON.back}</button><h1>${title}</h1></header>`;
+    const focused = (document.activeElement as HTMLElement | null)?.id;
+    if (net.status !== 'online' && !net.code) {
+      const err = net.error && net.status === 'offline';
+      this.screen('pvp-online', `${head('Play a friend')}
+        <div class="scroll on-wrap"><section class="on-card center">
+          ${err ? `<span class="eyebrow danger">Can't connect</span><p>${esc(net.error!.msg)}</p><p class="dim small">Server: ${esc(host)}</p>
+            <button class="btn primary big wide" data-act="pv-on-retry">${ICON.restart}<span>Try again</span></button>
+            <button class="btn wide" data-act="pv-on-server">${ICON.globe}<span>Change server</span></button>`
+          : `<div class="spinner"></div><p>Connecting to <b>${esc(host)}</b>…</p>`}
+        </section></div>`);
+      return;
+    }
+    if (!net.code || !net.lobby) {
+      if (net.code && !net.lobby) { this.screen('pvp-online', `${head('Play a friend')}<div class="scroll on-wrap"><section class="on-card center"><div class="spinner"></div><p>Rejoining room <b>${esc(net.code)}</b>…</p></section></div>`); return; }
+      this.screen('pvp-online', `${head('Play a friend')}
+        <div class="scroll on-wrap">
+          <section class="on-card">
+            <label class="eyebrow" for="on-name">Your name</label>
+            <input id="on-name" class="field" maxlength="16" autocomplete="nickname" value="${esc(this.playerName())}">
+          </section>
+          <section class="on-card">
+            <span class="eyebrow">Host a match</span>
+            <p class="dim">Get a room code and send it to your friend.</p>
+            <button class="btn primary big wide" data-act="pv-on-create">${ICON.swords}<span>Create a room</span></button>
+          </section>
+          <section class="on-card">
+            <label class="eyebrow" for="on-code">Join a friend</label>
+            <div class="on-join"><input id="on-code" class="field code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" value="${esc(this.joinCode)}">
+            <button class="btn" data-act="pv-on-join">Join</button></div>
+          </section>
+          <p class="dim small center">Server ${esc(host)} · ${net.rtt} ms · <button class="link" data-act="pv-on-server">change</button></p>
+          <p class="dim small center">Friend duels use your current deck and levels. No Limits are spent and no rating changes.</p>
+        </div>`);
+      if (focused) (document.getElementById(focused) as HTMLInputElement | null)?.focus();
+      return;
+    }
+    // the room lobby
+    const lob = net.lobby;
+    const seat = (i: number) => {
+      const pl = lob.players[i];
+      if (!pl) return `<div class="on-seat empty"><span class="pv-avatar">?</span><div><b>Waiting for a friend…</b><i>Send them the code</i></div></div>`;
+      const status = !pl.connected ? '<em class="wait">Reconnecting…</em>' : pl.ready ? `<em class="ok">${ICON.check}Ready</em>` : '<em>Not ready</em>';
+      return `<div class="on-seat ${pl.ready ? 'ready' : ''}"><span class="pv-avatar">${esc(pl.name[0] ?? '?')}</span>
+        <div><b>${esc(pl.name)}${i === net.you ? ' <small>(you)</small>' : ''}</b>${status}</div>
+        <div class="on-deck">${pl.deck.map((c) => `<span style="--rc:${RARITY_INFO[rarityOf(TOWER_BY_ID[c.id])].css}"><img src="${this.thumb(c.id, 96)}" alt="${esc(TOWER_BY_ID[c.id].name)}"><i>${c.level}</i></span>`).join('')}</div></div>`;
+    };
+    const mine = lob.players[net.you];
+    const other = lob.players[1 - net.you];
+    this.screen('pvp-online', `${head('Friend duel')}
+      <div class="scroll on-wrap">
+        <section class="on-card on-room">
+          <span class="eyebrow">Room code</span>
+          <div class="on-code" aria-label="Room code ${esc(lob.code)}">${[...lob.code].map((ch) => `<b>${ch}</b>`).join('')}</div>
+          <div class="row2"><button class="btn" data-act="pv-on-share">${ICON.link}<span>Invite link</span></button><button class="btn" data-act="pv-on-copy">${ICON.copy}<span>Copy code</span></button></div>
+        </section>
+        <div class="on-seats">${seat(net.you)}<div class="mm-vs small">VS</div>${seat(1 - net.you)}</div>
+        <div class="on-timer" id="on-timer"></div>
+        <div class="btn-col">
+          <button class="btn ${mine?.ready ? '' : 'primary'} big wide" data-act="pv-on-ready">${mine?.ready ? `${ICON.close}<span>Not ready</span>` : `${ICON.check}<span>Ready</span>`}</button>
+          <button class="btn ghost wide" data-act="pv-on-leave-room">Leave room</button>
+        </div>
+        <p class="dim small center">The match starts 5 seconds after you are both ready. ${net.rtt ? `Ping ${net.rtt} ms.` : ''}</p>
+      </div>`);
+    const tick = () => {
+      const el = document.getElementById('on-timer');
+      if (!el || !this.net) { clearInterval(this.onTimer); return; }
+      const since = mmss((Date.now() - this.net.roomSince) / 1000);
+      el.innerHTML = !other ? `Waiting for your friend to join · <b>${since}</b>`
+        : !other.connected ? `${esc(other.name)} is reconnecting…`
+        : other.ready && mine?.ready ? 'Both ready · starting…'
+        : other.ready ? `${esc(other.name)} is ready · tap Ready to start`
+        : mine?.ready ? `Waiting for ${esc(other.name)} to get ready · <b>${since}</b>`
+        : `${esc(other.name)} is here · tap Ready when you are`;
+    };
+    tick();
+    this.onTimer = window.setInterval(tick, 500);
+  }
+
+  private async shareInvite() {
+    const net = this.net;
+    if (!net?.code) return;
+    const link = inviteLink(net.code, net.url);
+    const text = `Duel me in frendsTD! Room code ${net.code}`;
+    try {
+      if (navigator.share && /^https?:/.test(link)) { await navigator.share({ title: 'frendsTD duel', text, url: link }); return; }
+      await navigator.clipboard.writeText(/^https?:/.test(link) ? `${text}: ${link}` : text);
+      this.host.ui.say('Invite copied');
+    } catch { this.host.ui.say(`Room code ${net.code}`); }
+  }
+
+  /** Leave the online area entirely. */
+  private closeOnline() {
+    clearInterval(this.onTimer);
+    this.net?.close();
+    this.net = null;
+    this.wantJoin = false;
   }
 
   // ------------------------------------------------------------------ clicks
@@ -428,6 +652,34 @@ export class PvpScreens {
       case 'pv-again': this.host.ui.closeModal(); this.host.endDuel(); if (arg === 'ranked' && limits(p, now).n <= 0) { this.home(); this.host.ui.say('Limit reached. Reset it or wait for the next one.'); } else this.battle(arg as 'ranked'); break;
       case 'pv-leave': this.host.ui.closeModal(); this.host.endDuel(); this.home(); break;
       case 'pv-open': this.openCheckpoint(el); break;
+      case 'pv-online': this.online(); break;
+      case 'pv-on-back': this.closeOnline(); this.home(); break;
+      case 'pv-on-create': this.net?.create(); break;
+      case 'pv-on-join': {
+        const code = cleanCode(this.joinCode);
+        if (!code) { a.deny(); this.host.ui.say('Enter the 4-letter room code'); break; }
+        this.wantJoin = true;
+        if (this.net?.status === 'online') this.net.join(code); else this.online(code);
+        break;
+      }
+      case 'pv-on-ready': { const n = this.net; if (n?.lobby) { n.ready(!n.lobby.players[n.you]?.ready); a.click(); } break; }
+      case 'pv-on-leave-room': this.net?.leaveRoom(); this.onlineScreen(); break;
+      case 'pv-on-share': void this.shareInvite(); break;
+      case 'pv-on-copy':
+        if (this.net?.code) navigator.clipboard?.writeText(this.net.code).then(() => this.host.ui.say('Code copied'), () => this.host.ui.say(`Room code ${this.net?.code}`));
+        break;
+      case 'pv-on-retry': if (this.net) { this.net.error = null; this.net.connect(); this.onlineScreen(); } else this.online(); break;
+      case 'pv-on-server': this.serverInput = this.net?.url ?? ''; this.closeOnline(); this.serverForm(); break;
+      case 'pv-on-connect': {
+        const url = normalizeServer(this.serverInput);
+        if (!url) { a.deny(); this.host.ui.say('That does not look like a server address'); break; }
+        saveServer(url);
+        this.ensureNet(url);
+        this.onlineScreen();
+        break;
+      }
+      case 'pv-on-rematch': this.host.ui.closeModal(); this.host.endDuel(); this.net?.ready(true); this.onlineScreen(); break;
+      case 'pv-on-leave': this.host.ui.closeModal(); this.host.endDuel(); this.net?.leaveRoom(); this.onlineScreen(); break;
       default: return false;
     }
     return true;

@@ -1,4 +1,5 @@
 import type { LevelDef, Theme, Wave, WaveGroup } from './types';
+import { pow } from '../sim/dmath';
 
 export const THEMES: Theme[] = [
   {
@@ -27,7 +28,7 @@ const L = (
   hp: number, threat: number, pool: string[], boss?: string, cols = 9, rows = 14,
 ): LevelDef => ({
   id, name, blurb, world, cols, rows, paths, waves,
-  startTokens: Math.round(((120 + 200 * Math.pow(hp, 0.9)) * (paths.length > 1 ? 1.3 : 1)) / 10) * 10, lives: 20, hp, threat: 1 + (id - 1) * 0.055 + threat * 0, pool, boss, seed: id * 7919,
+  startTokens: Math.round(((120 + 200 * pow(hp, 0.9)) * (paths.length > 1 ? 1.3 : 1)) / 10) * 10, lives: 20, hp, threat: 1 + (id - 1) * 0.055 + threat * 0, pool, boss, seed: id * 7919,
 });
 
 export const LEVELS: LevelDef[] = [
@@ -112,7 +113,7 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
   const hasRansom = level.pool.includes('ransom');
 
   for (let w = 0; w < W; w++) {
-    const hpMult = level.hp * Math.pow(HP_GROWTH, w);
+    const hpMult = level.hp * pow(HP_GROWTH, w);
     // the first waves are a warm-up; multi-lane levels field slightly smaller waves
     const ramp = [0.6, 0.78, 0.92][w] ?? 1;
     const budget = level.threat * (8 + 3.2 * w + 0.1 * w * w) * ramp * (nPaths > 1 ? 0.88 : 1);
@@ -123,7 +124,7 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
     const isBoss = isLast && !!level.boss;
     const pickType = (bias: number) => {
       // bias toward most recently introduced types
-      const r = Math.pow(rng(), bias);
+      const r = pow(rng(), bias);
       return avail[Math.min(avail.length - 1, Math.floor((1 - r) * avail.length))];
     };
     const add = (type: string, share: number, delay: number, path: number) => {
@@ -161,9 +162,9 @@ export function buildWaves(level: LevelDef, endlessExtra = 0): Wave[] {
       groups.push({ type: level.boss!, count: 1, gap: 1, delay: 4, path: 0, hpMult: bossScale(level) });
     }
     if (endlessExtra && w >= level.waves && (w - level.waves) % 5 === 4 && level.boss) {
-      groups.push({ type: level.boss, count: 1, gap: 1, delay: 3, path: 0, hpMult: bossScale(level) * Math.pow(1.5, (w - level.waves + 1) / 5) });
+      groups.push({ type: level.boss, count: 1, gap: 1, delay: 3, path: 0, hpMult: bossScale(level) * pow(1.5, (w - level.waves + 1) / 5) });
     }
-    waves.push({ groups, bonus: Math.round((18 + w * 4) * Math.pow(level.hp, 0.7)), boss: isBoss });
+    waves.push({ groups, bonus: Math.round((18 + w * 4) * pow(level.hp, 0.7)), boss: isBoss });
   }
   return waves;
 }

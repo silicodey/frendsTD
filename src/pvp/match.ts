@@ -6,6 +6,7 @@ import type { TowerStats } from '../data/towers';
 import { RARITY_INFO, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, abilityPower, talentMods, type Signature, type UnitMods } from './signatures';
 import { CAL } from './calibration';
+import { hypot, pow } from '../sim/dmath';
 
 /**
  * A Rush Royale-style duel. Each player has a 5×3 board with its own lane around it; both lanes get
@@ -41,7 +42,7 @@ const LEVEL: LevelDef = {
 const BASE_DPS = 11;
 const KILL_COMPUTE: Record<string, number> = { bug: 8, glitch: 7, trojan: 18, spam: 3, worm: 6, wormling: 2, hydraling: 30, clip: 2, hydra: 120, titan: 150, maximizer: 180 };
 const BOSSES = ['hydra', 'titan', 'maximizer'];
-const BOSS_HP = (wave: number) => 0.2 * Math.pow(1.27, wave - 4);
+const BOSS_HP = (wave: number) => 0.2 * pow(1.27, wave - 4);
 
 export interface DeckCard { id: string; level: number; talents: number[] }
 export interface PlayerSetup { name: string; deck: DeckCard[]; elo?: number }
@@ -101,7 +102,7 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   }
   d.noAir = false; // there are no flyers in duels
   const start = RARITY_INFO[rarity].startLevel;
-  return { card, base, def: d, mods, flags, sig, ap: abilityPower(card.level, start) * (1 + (mods.abilityPower ?? 0)), levelMult: Math.pow(1.09, card.level - 1) };
+  return { card, base, def: d, mods, flags, sig, ap: abilityPower(card.level, start) * (1 + (mods.abilityPower ?? 0)), levelMult: pow(1.09, card.level - 1) };
 }
 
 export class PvpMatch {
@@ -155,7 +156,7 @@ export class PvpMatch {
     const pl = side.power[t.ext.deck];
     const tmpD = t.ext.tmpDmg ?? 1, tmpR = t.ext.tmpRate ?? 1;
     return {
-      dmg: spec.def.dmg * Math.pow(RANK_DMG, t.rank - 1) * (1 + 0.25 * (pl - 1)) * spec.levelMult * tmpD,
+      dmg: spec.def.dmg * pow(RANK_DMG, t.rank - 1) * (1 + 0.25 * (pl - 1)) * spec.levelMult * tmpD,
       rate: spec.def.rate * (1 + 0.07 * (t.rank - 1)) * tmpR,
       range: spec.def.range,
       aux: (1 + 0.2 * (t.rank - 1) + 0.1 * (pl - 1)) * Math.sqrt(spec.levelMult),
@@ -226,7 +227,7 @@ export class PvpMatch {
   // ------------------------------------------------------------------ waves
   private scheduleWave(w: number) {
     const n = Math.min(24, 8 + Math.round(1.2 * (w - 1)));
-    const hp = Math.pow(1.17, w - 1) * (w > 14 ? Math.pow(1.3, w - 14) : 1);
+    const hp = pow(1.17, w - 1) * (w > 14 ? pow(1.3, w - 14) : 1);
     const t0 = this.time;
     for (let i = 0; i < n; i++) {
       const type = w >= 3 && i % 6 === 5 ? 'trojan' : w >= 2 && i % 4 === 3 ? 'glitch' : 'bug';
@@ -302,7 +303,7 @@ export class PvpMatch {
         if (e.vulnT > 0 && (e as Enemy & { markBy?: number }).markBy !== undefined) {
           const m = e as Enemy & { markBy?: number; markV?: number };
           const src2 = this.sim.towers.find((t) => t.id === m.markBy);
-          if (src2 && s.deck[src2.ext.deck]?.flags.has('contagion')) for (const o of this.laneEnemies(e.pathIdx)) if (Math.hypot(o.x - e.x, o.z - e.z) < 1.4) this.mark(o, src2, m.markV ?? 0.12, 4);
+          if (src2 && s.deck[src2.ext.deck]?.flags.has('contagion')) for (const o of this.laneEnemies(e.pathIdx)) if (hypot(o.x - e.x, o.z - e.z) < 1.4) this.mark(o, src2, m.markV ?? 0.12, 4);
         }
         ev.n = gain;
         s.compute += gain; s.computeEarned += gain; s.kills++;
@@ -355,7 +356,7 @@ export class PvpMatch {
     if (!spec?.sig) return;
     const n = (t.ext.rails = (t.ext.rails ?? 0) + 1);
     const ax = ev.x!, az = ev.z!, bx = ev.x2!, bz = ev.z2!;
-    const L = Math.hypot(bx - ax, bz - az) || 1, ux = (bx - ax) / L, uz = (bz - az) / L;
+    const L = hypot(bx - ax, bz - az) || 1, ux = (bx - ax) / L, uz = (bz - az) / L;
     const w = (spec.def.railWidth ?? 0.4) + 0.25;
     const onLine = this.laneEnemies(t.side).filter((o) => {
       const rx = o.x - ax, rz = o.z - az, along = rx * ux + rz * uz;
@@ -407,7 +408,7 @@ export class PvpMatch {
     const s = this.sides[t.side];
     const spec = s?.deck[t.ext.deck];
     if (spec?.base.id !== 'gk_supernova') return;
-    if (spec.flags.has('ionized')) for (const o of this.laneEnemies(t.side)) if (Math.hypot(o.x - ev.x!, o.z - ev.z!) < (spec.def.splash ?? 1) + 0.3) this.mark(o, t, 0.1, 3);
+    if (spec.flags.has('ionized')) for (const o of this.laneEnemies(t.side)) if (hypot(o.x - ev.x!, o.z - ev.z!) < (spec.def.splash ?? 1) + 0.3) this.mark(o, t, 0.1, 3);
     const n = (t.ext.strikes = (t.ext.strikes ?? 0) + 1);
     if (n % (spec.flags.has('cascade4') ? 4 : 5) !== 0) return;
     let k = 0;
@@ -424,7 +425,7 @@ export class PvpMatch {
     const spec = s?.deck[t.ext.deck];
     if (spec?.base.id !== 'gk_blackhole') return;
     for (const o of this.laneEnemies(t.side)) {
-      if (Math.hypot(o.x - t.x, o.z - t.z) > t.stats.range + 0.2) continue;
+      if (hypot(o.x - t.x, o.z - t.z) > t.stats.range + 0.2) continue;
       if (!o.def.boss) this.sim.damage(o, o.maxHp * 0.01 * spec.ap, t, 0, 1, true);
       else if (spec.flags.has('pullBoss')) { o.dist = Math.max(0, o.dist - (spec.def.pull ?? 2) * 0.8); this.sim.place(o); }
     }
@@ -473,7 +474,7 @@ export class PvpMatch {
         for (const e of hits) {
           this.sim.explode(e.x, 0.3, e.z, r, t.stats.dmg * 1.5 * spec.ap, t, false, false);
           for (const o of this.laneEnemies(side)) {
-            if (Math.hypot(o.x - e.x, o.z - e.z) > r + 0.2) continue;
+            if (hypot(o.x - e.x, o.z - e.z) > r + 0.2) continue;
             if (spec.flags.has('burstSlow')) { o.slowPct = Math.max(o.slowPct, 0.3); o.slowT = Math.max(o.slowT, 2); }
             if (spec.flags.has('burstBurn')) { o.dotDps = Math.max(o.dotDps, t.stats.dmg * 0.4); o.dotT = Math.max(o.dotT, 3); o.dotSrc = t; }
           }
@@ -482,7 +483,7 @@ export class PvpMatch {
         break;
       }
       case 'cl_mcp': {
-        const adj = this.units(side).filter((u) => u !== t && Math.hypot(u.x - t.x, u.z - t.z) < 1.6 && u.def.kind !== 'support');
+        const adj = this.units(side).filter((u) => u !== t && hypot(u.x - t.x, u.z - t.z) < 1.6 && u.def.kind !== 'support');
         if (!adj.length) return;
         const n = spec.flags.has('fanOut') ? adj.length : spec.flags.has('twoCalls') ? 2 : 1;
         const pick = [...adj].sort(() => this.rng() - 0.5).slice(0, n);
@@ -541,6 +542,15 @@ export class PvpMatch {
         this.events.push({ t: 'bossCast', side, kind: 'encrypt', text: 'Encrypt: units jammed', x: set[0].x, z: set[0].z });
       }
     }
+  }
+
+  /** A player concedes (or dropped out of an online match for too long). */
+  forfeit(side: number) {
+    if (this.ended) return;
+    this.sides[side].hearts = 0;
+    this.ended = true;
+    this.winner = 1 - side;
+    this.events.push({ t: 'end', side: this.winner });
   }
 
   private checkEnd() {

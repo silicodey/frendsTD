@@ -30,6 +30,7 @@ export interface PvpProfile {
   matches: number;
   seenArena: number;
   coached?: boolean; // the first-duel coach has been shown
+  name?: string; // shown to friends in online duels
 }
 
 export function newProfile(now: number): PvpProfile {
@@ -59,6 +60,7 @@ export function sanitize(p: PvpProfile, now: number): PvpProfile {
   for (const id of [...STARTER_DECK, ...Object.keys(p.cards)]) if (deck.length < DECK_SIZE && !deck.includes(id)) deck.push(id);
   p.deck = deck;
   for (const k of ['wins', 'losses', 'draws', 'streak', 'winsSinceEpic', 'matches', 'seenArena'] as const) p[k] = Math.max(0, n(p[k], 0));
+  if (typeof p.name !== 'string' || !p.name.trim()) delete p.name; else p.name = p.name.trim().slice(0, 16);
   return p;
 }
 
