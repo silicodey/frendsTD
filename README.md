@@ -114,26 +114,25 @@ One player creates a room and gets a 4-letter code (or an invite link); the frie
 **Ready**, a shared 5-second countdown starts, and the duel begins on both phones at the same moment. Friend
 duels use your own deck and levels; they cost no Limits and don't change your rating.
 
-### Run the server
+### Deploy the server (once, by the developer)
 
-```bash
-npm install
-npm run build      # the game, into dist/
-npm run server     # game + duel server on http://localhost:8787 (PORT=… to change)
-```
+Players never deal with servers: the game has its server address built in (`src/net/config.ts`), and invite
+links open the game straight into the room. The developer hosts one server:
 
-The server also serves the game, so friends just open its address in a browser. On home Wi-Fi that is
-`http://<your computer's IP>:8787`. For play over the internet, deploy it anywhere that runs Node 20+ or a
-container and gives you HTTPS (WebSockets ride on the same port):
+1. On [Render](https://render.com): **New → Blueprint**, pick this repository and branch. Render reads
+   `render.yaml` and builds the `Dockerfile`: one web service that serves the game and runs the duel rooms.
+2. When the deploy is live, its address (e.g. `https://frendstd.onrender.com`) is the game's home: share it,
+   or put it in `GAME_SERVER` in `src/net/config.ts` so copies hosted elsewhere (the single-file build,
+   a phone app) use it too.
+3. Every push to the branch redeploys automatically.
 
-```bash
-docker build -t frendstd . && docker run -p 8787:8787 frendstd
-```
+On Render's free plan the server sleeps after about 15 idle minutes; the first player after that sees
+"Waking up the game server…" for up to a minute. The Starter plan stays awake.
 
-Any host that runs a Dockerfile works (Fly.io, Render, Railway, a VPS behind Caddy…). A copy of the game that
-isn't served by the server (the single HTML file, a phone app build) asks for the server address the first
-time, or takes it from `?server=wss://your-host` or `VITE_SERVER_URL` at build time. During development,
-`npm run dev` forwards `/ws` to a server running on port 8787.
+Running it yourself instead: `npm run build && npm run server` (game + server on port 8787, `PORT=…` to
+change), or `docker build -t frendstd . && docker run -p 8787:8787 frendstd`. During development,
+`npm run dev` forwards `/ws` to a server on port 8787. Developers can point any copy at another server with
+`?server=wss://host`.
 
 ### How it stays fair and in sync
 
