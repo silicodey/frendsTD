@@ -98,9 +98,9 @@ export class Duel {
           <div class="pv-hearts" id="pv-hearts-1"></div>
           <div class="pv-rdeck">${rival.deck.map((u, i) => `<span class="pv-mini" style="--rc:${RARITY_INFO[rarityOf(u.base)].css}"><img src="${this.host.ui.thumb(u.base)}" alt="${esc(u.base.name)}"><i id="pv-lv-1-${i}">1</i></span>`).join('')}</div>
         </div>`}
-        <button class="icon-btn pv-menu" data-pact="menu" aria-label="Menu">${ICON.pause}</button>
+        ${local ? '' : `<button class="icon-btn pv-menu" data-pact="menu" aria-label="Menu">${ICON.pause}</button>`}
       </div>
-      <div class="pv-mid"><div class="pv-wave" id="pv-wave">Get ready</div></div>
+      <div class="pv-mid"><div class="pv-wave" id="pv-wave">Get ready</div>${local ? `<button class="icon-btn pv-menu" data-pact="menu" aria-label="Menu">${ICON.pause}</button>` : ''}</div>
       <div class="pv-banner" id="pv-banner" hidden></div>
       <div class="pv-coach" id="pv-coach" hidden></div>
       <div class="pv-bot">${this.controls(0)}</div>`;

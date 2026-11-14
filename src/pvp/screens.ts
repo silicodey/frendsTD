@@ -329,7 +329,7 @@ export class PvpScreens {
       const title = opts.mode === 'local' ? (match.winner === -1 ? 'Draw' : `${match.sides[match.winner].name} wins`) : score === 1 ? 'Victory' : score === 0 ? 'Defeat' : 'Draw';
       ui.openModal(`<div class="sheet result ${score === 0 && opts.mode !== 'local' ? 'lost' : 'won'}" data-noclose>
         <div class="eyebrow">${opts.mode === 'local' ? 'Local duel' : 'Practice · no rewards'}</div><h2>${esc(title)}</h2>
-        ${this.statsLine(match)}
+        ${this.statsLine(match, opts.mode === 'local')}
         <div class="btn-col"><button class="btn primary big wide" data-act="pv-again" data-arg="${opts.mode}">${ICON.restart}<span>Rematch</span></button>
         <button class="btn wide" data-act="pv-leave">${ICON.back}<span>Done</span></button></div></div>`);
       return;
@@ -355,9 +355,12 @@ export class PvpScreens {
     this.host.renderNow();
   }
 
-  private statsLine(match: PvpMatch) {
-    const s = match.sides[0];
-    return `<div class="meta-row center"><span class="pill">Wave <b>${match.wave}</b></span><span class="pill">${s.kills} kills</span><span class="pill">${s.merges} merges</span><span class="pill">Top rank <b>${s.maxRank}</b></span></div>`;
+  private statsLine(match: PvpMatch, local = false) {
+    const row = (side: number, label = '') => {
+      const s = match.sides[side];
+      return `<div class="meta-row center">${label ? `<span class="pill who">${esc(label)}</span>` : `<span class="pill">Wave <b>${match.wave}</b></span>`}<span class="pill">${s.kills} ${s.kills === 1 ? 'kill' : 'kills'}</span><span class="pill">${s.merges} ${s.merges === 1 ? 'merge' : 'merges'}</span><span class="pill">Top rank <b>${s.maxRank}</b></span></div>`;
+    };
+    return local ? `${row(0, match.sides[0].name)}${row(1, match.sides[1].name)}` : row(0);
   }
 
   private openCheckpoint(el: HTMLElement) {
