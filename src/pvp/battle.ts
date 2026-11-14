@@ -10,6 +10,8 @@ import { ICON } from '../ui/icons';
 import { PvpBot } from './bot';
 import { HEARTS, MAX_POWER, PvpMatch, type MatchEvent, type PlayerSetup } from './match';
 import { RARITY_INFO, rarityOf } from './roster';
+import { traits } from '../data/towers';
+import { SIGNATURE_BY_ID } from './signatures';
 import type { OnlineSession } from '../net/client';
 import { DT, HASH_EVERY, Lockstep, TICK_MS, applyCmd, matchHash, type Cmd } from '../net/protocol';
 
@@ -61,6 +63,7 @@ export class Duel {
   readonly foe: number;
   private lock: Lockstep | null = null;
   private apT = 0;
+  private suppressClick = false;
   private net: OnlineSession | null = null;
 
   constructor(private host: DuelHost, public opts: DuelOptions) {
@@ -124,8 +127,34 @@ export class Duel {
       <div class="pv-coach" id="pv-coach" hidden></div>
       ${online ? '<div class="pv-count" id="pv-count" hidden></div><div class="pv-netmsg" id="pv-netmsg" hidden></div>' : ''}
       <div class="pv-bot">${this.controls(this.me)}</div>`;
+    // long-press (or right-click) a unit card: its details instead of a power-up
+    let press = 0, pressed: HTMLElement | null = null;
+    const cancelPress = () => { clearTimeout(press); pressed = null; };
+    this.root.addEventListener('pointerdown', (e) => {
+      // a new touch starts fresh (a long-press releases over the popup, so its click never reaches us)
+      this.suppressClick = false;
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pact="power"]');
+      if (!el || this.paused) return;
+      pressed = el;
+      clearTimeout(press);
+      press = window.setTimeout(() => {
+        if (pressed !== el) return;
+        this.suppressClick = true;
+        try { navigator.vibrate?.(15); } catch { /* */ }
+        this.cardInfo(Number(el.dataset.side ?? 0), Number(el.dataset.i));
+      }, 420);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) this.root.addEventListener(ev, cancelPress);
+    this.root.addEventListener('contextmenu', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pact="power"]');
+      if (!el) return;
+      e.preventDefault();
+      cancelPress();
+      if (!this.paused) this.cardInfo(Number(el.dataset.side ?? 0), Number(el.dataset.i));
+    });
     const onClick = (e: Event) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pact]');
+      if (this.suppressClick) { this.suppressClick = false; return; }
       if (!el || this.paused) { if (el?.dataset.pact === 'menu') this.menu(); return; }
       const side = Number(el.dataset.side ?? 0);
       if (el.dataset.pact === 'summon') this.act(side, { k: 's' });
@@ -138,6 +167,11 @@ export class Duel {
   /** Do something for a side: right away offline; online, send it to the server (it lands for both players at the same tick). */
   private act(side: number, c: Cmd) {
     if (!this.canControl(side) || this.match.ended) return;
+    if (c.k === 'p' && !this.match.hasType(side, c.i)) {
+      this.host.audio.deny();
+      this.host.ui.say(`Summon a ${this.match.sides[side].deck[c.i].base.name} first, then power it up`);
+      return;
+    }
     if (!this.net) { if (!applyCmd(this.match, side, c)) this.host.audio.deny(); return; }
     if (this.net.clockTick() < 0) { this.host.audio.deny(); return; }
     const m = this.match, s = m.sides[side];
@@ -173,10 +207,11 @@ export class Duel {
       this.set(`pv-hearts-${side}`, s.hearts, (el) => { el.innerHTML = Array.from({ length: HEARTS }, (_, i) => `<span class="hp ${i < s.hearts ? 'on' : ''}">${ICON.heart}</span>`).join(''); });
       for (let i = 0; i < s.deck.length; i++) {
         this.set(`pv-lv-${side}-${i}`, s.power[i], (el) => { el.textContent = s.power[i] >= MAX_POWER ? 'MAX' : `Lv${s.power[i]}`; });
-        const cost = m.powerCost(side, i);
-        this.set(`pv-pc-${side}-${i}`, `${cost}:${s.compute >= cost}`, (el) => {
+        const cost = m.powerCost(side, i), has = m.hasType(side, i);
+        this.set(`pv-pc-${side}-${i}`, `${cost}:${s.compute >= cost}:${has}`, (el) => {
           el.innerHTML = Number.isFinite(cost) ? `${ICON.compute}${cost}` : '';
-          el.parentElement!.classList.toggle('ok', s.compute >= cost);
+          el.parentElement!.classList.toggle('ok', s.compute >= cost && has);
+          el.parentElement!.classList.toggle('none', !has && Number.isFinite(cost));
           el.parentElement!.classList.toggle('max', !Number.isFinite(cost));
         });
       }
@@ -203,19 +238,69 @@ export class Duel {
     this.bannerT = 2.2;
   }
 
+  /** A unit card's details: what it does, its numbers right now, and what a power-up would add. */
+  cardInfo(side: number, i: number) {
+    const m = this.match, s = m.sides[side], spec = s.deck[i];
+    if (!spec) return;
+    const def = spec.base, d = spec.def, fam = FAMILY_INFO[def.family], r = RARITY_INFO[rarityOf(def)];
+    const sig = SIGNATURE_BY_ID[def.id];
+    const pl = s.power[i];
+    const area = d.kind === 'nova' || d.kind === 'aura' || d.kind === 'support';
+    const beam = d.kind === 'beam' || d.kind === 'aura';
+    const dmg = d.dmg * spec.levelMult * (1 + 0.25 * (pl - 1));
+    const units = m.units(side).filter((t) => t.ext.deck === i);
+    const best = units.reduce((a, t) => Math.max(a, t.rank), 0);
+    const rows: [string, string][] = [];
+    if (d.dmg > 0) rows.push([beam ? 'Damage / sec (rank 1)' : 'Damage (rank 1)', dmg.toFixed(dmg < 10 ? 1 : 0)]);
+    if (!beam && d.rate > 0) rows.push(['Attack speed', `${(d.rate * (d.burst ?? 1)).toFixed(2)}/s`]);
+    rows.push(['Reach', area ? (d.kind === 'support' ? 'Adjacent units' : `${d.range.toFixed(1)} tiles`) : 'Whole lane']);
+    rows.push(['Each rank', `+${Math.round((1.85 - 1) * 100)}% damage, +7% speed`]);
+    rows.push(['Card level', String(spec.card.level)]);
+    rows.push(['On the board', units.length ? `${units.length} · best rank ${best}` : 'none yet']);
+    const cost = m.powerCost(side, i);
+    const powerLine = !Number.isFinite(cost) ? 'Power-up maxed (Lv 5).'
+      : !units.length ? `Summon one first, then power-ups cost ${cost} compute.`
+      : `Next power-up (${cost} compute): +25% damage for every ${def.name} on the board${sig ? ' and a stronger special capability' : ''}.`;
+    const picks = sig ? sig.talents.map((pair, tier) => pair[spec.card.talents[tier]]).filter(Boolean) : [];
+    const offline = !this.net;
+    if (offline) this.paused = true;
+    this.host.ui.openModal(`<div class="sheet unit-sheet card-info" data-noclose style="--fc:${fam.css};--fc2:${fam.css2};--rc:${r.css}">
+      <button class="icon-btn close" data-act="duel-resume" aria-label="Close">${ICON.close}</button>
+      <div class="us-top">
+        <img src="${this.host.ui.thumb(def, 256)}" alt="">
+        <div class="us-h">
+          <div class="eyebrow">${fam.name} · ${r.name}${sig ? ' · ★ Signature' : ''}</div>
+          <h2>${esc(def.name)}</h2>
+          <div class="role">${esc(def.role)} · power Lv ${pl}/${MAX_POWER}</div>
+        </div>
+      </div>
+      <p class="desc">${esc(def.desc)}</p>
+      <div class="kv">${rows.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div>
+      <div class="chips">${traits(d).filter((x) => x !== 'Global range').slice(0, 7).map((x) => `<span class="chip">${esc(x)}</span>`).join('')}</div>
+      ${sig ? `<div class="ability"><div class="ab-h"><span class="eyebrow">Special capability</span><b>${esc(sig.ability.name)}</b></div><p>${esc(sig.ability.text(spec.ap))}</p></div>` : ''}
+      ${picks.length ? `<div class="chips">${picks.map((t) => `<span class="chip" title="${esc(t.desc)}">★ ${esc(t.name)}</span>`).join('')}</div>` : ''}
+      <p class="dim small">${esc(powerLine)} Merge two of the same rank into a random unit one rank higher.</p>
+      <button class="btn primary wide" data-act="duel-resume">${ICON.play}<span>${offline ? 'Back to the match' : 'Close'}</span></button>
+    </div>`);
+  }
+
   menu() {
     if (this.match.ended) return;
     this.paused = true;
     const ranked = this.opts.mode === 'ranked', online = !!this.net;
-    this.host.ui.openModal(`<div class="sheet small" data-noclose><h2>${online ? 'Menu' : 'Paused'}</h2>
+    const ui = this.host.ui;
+    ui.settingsMode = 'duel';
+    ui.duelMenuRefresh = () => { if (this.paused && !this.match.ended) this.menu(); };
+    ui.openModal(`<div class="sheet small" data-noclose><h2>${online ? 'Menu' : 'Paused'}</h2>
       ${online ? '<p class="dim">The match keeps running for your friend while this is open.</p>' : ''}
+      <div class="set-list">${ui.soundRows()}</div>
       <div class="btn-col">
         <button class="btn primary big wide" data-act="duel-resume">${ICON.play}<span>${online ? 'Back to the match' : 'Resume'}</span></button>
         <button class="btn wide danger" data-act="duel-forfeit">${ranked ? 'Forfeit (counts as a loss)' : online ? 'Concede the match' : 'Leave duel'}</button>
       </div></div>`);
   }
 
-  resume() { this.host.ui.closeModal(); this.paused = false; }
+  resume() { this.host.ui.closeModal(); this.paused = false; this.suppressClick = false; }
   forfeit() {
     this.host.ui.closeModal();
     this.paused = false;

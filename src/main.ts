@@ -44,7 +44,10 @@ class App implements AppApi {
   private drag: { id: string; sx: number; sy: number; active: boolean; pid: number } | null = null;
   private ghostCell: { c: number; r: number; on: boolean } = { c: 0, r: 0, on: false };
   private slowT = 0;
-  private autoQ: 'high' | 'medium' | 'low' = 'high';
+  /** Auto graphics start at Balanced on phones and tablets, High on computers. */
+  private autoQ: 'high' | 'medium' | 'low' = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 'medium' : 'high';
+  /** Seconds of continuous play since the last thermal step-down (phones heat up over long sessions). */
+  private hotT = 0;
   private tutStep = 0;
   private tutT = 0;
   private camEl = 0.96;
@@ -91,6 +94,7 @@ class App implements AppApi {
 
   applySettings() {
     const d = this.save.data;
+    if (this.audio.track !== d.track) this.audio.setTrack(d.track);
     this.audio.setMusic(d.music);
     this.audio.setSfx(d.sfx);
     this.engine.autoDpr = true;
@@ -474,6 +478,11 @@ class App implements AppApi {
   private frame(now: number) {
     if (this.external) return;
     requestAnimationFrame((t) => this.frame(t));
+    // never draw faster than needed: 60 fps in play (120 Hz phones would otherwise draw twice as often),
+    // 30 behind the menus and in Battery saver
+    const cap = this.mode === 'menu' || this.engine.quality === 'low' ? 30 : 60;
+    this.engine.fpsCap = cap;
+    if (now - this.last < 1000 / cap - 3) return;
     const raw = (now - this.last) / 1000;
     this.last = now;
     const dt = Math.min(0.05, Math.max(0, raw));
@@ -524,6 +533,17 @@ class App implements AppApi {
     }
     e.render(dt);
 
+    // thermal guard: on Auto, a phone that has been playing for 10 minutes straight steps its graphics down
+    // a notch before it gets hot (and again 10 minutes later)
+    if (this.save.data.quality === 'auto' && this.mode !== 'menu' && raw < 0.5 && this.autoQ !== 'low' && matchMedia('(pointer: coarse)').matches) {
+      this.hotT += raw;
+      if (this.hotT > 600) {
+        this.hotT = 0;
+        this.autoQ = this.autoQ === 'high' ? 'medium' : 'low';
+        this.applySettings();
+        this.ui.say(this.autoQ === 'low' ? 'Battery saver on to keep your phone cool' : 'Graphics eased to keep your phone cool');
+      }
+    }
     // automatic quality fallback when the adaptive resolution is not enough
     if (this.save.data.quality === 'auto' && e.time > 4 && raw < 0.5) {
       if (e.getFps() < 30 && e.dpr <= 0.8) this.slowT += dt; else this.slowT = Math.max(0, this.slowT - dt * 0.5);

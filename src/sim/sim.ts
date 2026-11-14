@@ -349,6 +349,10 @@ export class Sim {
     return out;
   }
 
+  /** Display only (damage numbers): told about every bit of damage dealt. Never feeds back into the game. */
+  onDamage: ((e: Enemy, dealt: number, src: Tower | null, crit: boolean) => void) | null = null;
+  private critNow = false;
+
   damage(e: Enemy, amount: number, src: Tower | null, pierce = 0, shieldMult = 1, noArmor = false): number {
     if (!e.alive) return 0;
     if (e.vulnT > 0) amount *= 1 + e.vuln;
@@ -360,7 +364,7 @@ export class Sim {
       amount -= absorbed / shieldMult;
       dealt += absorbed;
       e.shieldCd = 2.5;
-      if (amount <= 0.001) { e.hitT = this.time; if (src) src.dmgDone += dealt; return dealt; }
+      if (amount <= 0.001) { e.hitT = this.time; if (src) src.dmgDone += dealt; this.onDamage?.(e, dealt, src, this.critNow); return dealt; }
     }
     e.shieldCd = 2.5;
     if (!noArmor && e.armor > 0) amount = Math.max(amount * 0.2, amount - e.armor * (1 - pierce));
@@ -369,6 +373,7 @@ export class Sim {
     dealt += d;
     e.hitT = this.time;
     if (src) src.dmgDone += dealt;
+    this.onDamage?.(e, dealt, src, this.critNow);
     if (e.hp <= 0) this.kill(e, src);
     return dealt;
   }
@@ -434,7 +439,9 @@ export class Sim {
   hit(e: Enemy, dmg: number, t: Tower, crit: boolean) {
     const def = t.def;
     const was = e.alive;
+    this.critNow = crit;
     this.damage(e, dmg, t, def.pierce ?? 0, def.shieldMult ?? 1);
+    this.critNow = false;
     if (was) this.effects(e, t);
     this.events.push({ t: 'hit', x: e.x, y: e.y + e.def.size * 0.35, z: e.z, n: dmg, crit, family: def.family, enemy: e });
   }
@@ -448,7 +455,9 @@ export class Sim {
       const rr = radius + e.def.size * 0.2;
       if (d > rr) continue;
       const f = d < radius * 0.5 ? 1 : 1 - 0.5 * ((d - radius * 0.5) / (rr - radius * 0.5));
+      this.critNow = crit;
       this.damage(e, dmg * f, t, t.def.pierce ?? 0, t.def.shieldMult ?? 1);
+      this.critNow = false;
       this.effects(e, t);
     }
     this.events.push({ t: 'explode', x, y, z, r: radius, family: t.def.family, tower: t, crit });

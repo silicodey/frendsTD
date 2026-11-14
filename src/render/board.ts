@@ -160,7 +160,8 @@ export class Board {
     const s = Math.max(this.sim.cols, this.sim.rows) / 2 + 2.5;
     key.shadow.camera.left = -s; key.shadow.camera.right = s; key.shadow.camera.top = s; key.shadow.camera.bottom = -s;
     key.shadow.camera.near = 1; key.shadow.camera.far = 40;
-    key.shadow.mapSize.set(2048, 2048);
+    const sm = this.engine.quality === 'high' ? 2048 : 1024;
+    key.shadow.mapSize.set(sm, sm);
     key.shadow.bias = -0.0006; key.shadow.normalBias = 0.03; key.shadow.radius = 3;
     g.add(key, key.target);
     const rim = new THREE.DirectionalLight(t.rim, 1.5);

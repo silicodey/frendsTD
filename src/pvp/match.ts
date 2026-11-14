@@ -42,7 +42,12 @@ const LEVEL: LevelDef = {
 const BASE_DPS = 11;
 const KILL_COMPUTE: Record<string, number> = { bug: 8, glitch: 7, trojan: 18, spam: 3, worm: 6, wormling: 2, hydraling: 30, clip: 2, hydra: 120, titan: 150, maximizer: 180 };
 const BOSSES = ['hydra', 'titan', 'maximizer'];
-const BOSS_HP = (wave: number) => 0.2 * pow(1.27, wave - 4);
+/**
+ * Boss tuning (calibrated with tools/bosses.ts against casual and strong play). Same values on every
+ * device and the server, so changing them needs a protocol bump.
+ */
+export const BOSS_TUNE = { hpBase: 0.2, hpGrowth: 1.24, armor: 0.4, drainEvery: 8, enemyArmor: 0.7 };
+const BOSS_HP = (wave: number) => BOSS_TUNE.hpBase * pow(BOSS_TUNE.hpGrowth, wave - 4);
 
 export interface DeckCard { id: string; level: number; talents: number[] }
 export interface PlayerSetup { name: string; deck: DeckCard[]; elo?: number }
@@ -213,10 +218,13 @@ export class PvpMatch {
     return t;
   }
 
+  /** A unit type can only be powered up once at least one of it is on the board. */
+  hasType(side: number, i: number) { return this.sim.towers.some((t) => t.side === side && t.ext.deck === i); }
+
   powerUp(side: number, i: number): boolean {
     const s = this.sides[side];
     const cost = this.powerCost(side, i);
-    if (this.ended || s.compute < cost) return false;
+    if (this.ended || s.compute < cost || !this.hasType(side, i)) return false;
     s.compute -= cost;
     s.power[i]++;
     this.sim.recomputeBuffs();
@@ -253,6 +261,7 @@ export class PvpMatch {
       for (let side = 0; side < 2; side++) {
         const e = this.sim.spawnEnemy(s.type, side, s.hp);
         e.spd = LANE_SPEED;
+        e.armor *= e.def.boss ? BOSS_TUNE.armor : BOSS_TUNE.enemyArmor;
         e.bounty = this.killReward(s.type);
       }
     }
@@ -513,7 +522,7 @@ export class PvpMatch {
       if (!boss) { this.bossT[side] = 5; continue; }
       this.bossT[side] -= dt;
       if (this.bossT[side] > 0 || boss.stunT > 0) continue;
-      this.bossT[side] = 6;
+      this.bossT[side] = BOSS_TUNE.drainEvery;
       const units = this.units(side);
       if (!units.length) continue;
       const pick = () => units[Math.floor(this.rng() * units.length)];

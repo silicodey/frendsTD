@@ -8,6 +8,7 @@ export interface SaveData {
   music: boolean;
   sfx: boolean;
   quality: Quality | 'auto';
+  track: number; // soundtrack index
   tutorial: boolean;
   seen: string[]; // tower ids the player has been shown as unlocked
   fails: Record<number, number>; // consecutive defeats per level → reinforcements
@@ -19,7 +20,7 @@ export const LOADOUT_SIZE = 6;
 const DEFAULT_LOADOUT = ['gem_nano', 'cl_haiku', 'cx_autocomplete', 'gk_spark', 'cl_sonnet', 'cx_linter'];
 
 function defaults(): SaveData {
-  return { stars: {}, loadout: [...DEFAULT_LOADOUT], music: true, sfx: true, quality: 'auto', tutorial: false, seen: [], fails: {}, pvp: newProfile(Date.now()) };
+  return { stars: {}, loadout: [...DEFAULT_LOADOUT], music: true, sfx: true, quality: 'auto', track: 0, tutorial: false, seen: [], fails: {}, pvp: newProfile(Date.now()) };
 }
 
 export class Save {
@@ -32,6 +33,7 @@ export class Save {
       const raw = localStorage.getItem(KEY);
       if (raw) this.data = { ...defaults(), ...JSON.parse(raw) };
     } catch { /* storage unavailable: play without persistence */ }
+    if (!Number.isInteger(this.data.track) || this.data.track < 0) this.data.track = 0;
     this.data.pvp = sanitize(this.data.pvp ?? newProfile(Date.now()), Date.now());
     this.data.loadout = this.data.loadout.filter((id) => this.isUnlocked(id)).slice(0, LOADOUT_SIZE);
     if (!this.data.loadout.length) this.data.loadout = [...DEFAULT_LOADOUT];
@@ -41,7 +43,7 @@ export class Save {
     try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch { /* ignore */ }
   }
 
-  reset() { this.data = { ...defaults(), music: this.data.music, sfx: this.data.sfx, quality: this.data.quality }; this.write(); }
+  reset() { this.data = { ...defaults(), music: this.data.music, sfx: this.data.sfx, quality: this.data.quality, track: this.data.track }; this.write(); }
 
   /** Tokens paid for a campaign result: 40 per newly earned star, 10 for a replayed win. */
   campaignTokens(levelId: number, stars: number) {

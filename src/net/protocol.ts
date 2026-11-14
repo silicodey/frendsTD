@@ -15,7 +15,7 @@ import { TALENT_LEVELS, isSignatureId } from '../pvp/signatures';
  */
 
 /** Bump whenever game rules, balance or this protocol change: mismatched clients are turned away. */
-export const PROTO = 1;
+export const PROTO = 2;
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
 export const DT = 1 / TICK_HZ;

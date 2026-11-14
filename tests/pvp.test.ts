@@ -77,7 +77,8 @@ test('battle specs are normalised: rarer and higher level hits harder, nothing i
     }
   }
   const c = buildSpec({ id: 'gem_flash', level: 7, talents: [] }), l = buildSpec({ id: 'gem_twinsuns', level: 7, talents: [] });
-  assert.ok(approxDps(l.def) > approxDps(c.def) * 1.2, 'legendary out-damages common at equal level');
+  // calibration (measured board value) trims the raw rarity edge a little; a legendary still clearly hits harder
+  assert.ok(approxDps(l.def) > approxDps(c.def) * 1.1, 'legendary out-damages common at equal level');
   assert.ok(buildSpec({ id: 'gem_flash', level: 9, talents: [] }).levelMult > c.levelMult);
 });
 
@@ -281,14 +282,17 @@ test('merging: same unit and rank only, result is one rank higher where the targ
 test('power-ups follow the cost ladder and cap at level 5', () => {
   const m = newMatch();
   m.sides[0].compute = 1e6;
+  assert.ok(!m.powerUp(0, 2), 'no power-up before that unit type is on the board');
+  assert.ok(m.sides[0].compute === 1e6, 'and nothing is spent');
+  place(m, 0, 2);
   for (let i = 0; i < MAX_POWER - 1; i++) {
-    const before = m.sides[0].compute;
+    const before: number = m.sides[0].compute;
     assert.ok(m.powerUp(0, 2));
     assert.equal(before - m.sides[0].compute, POWER_COSTS[i]);
   }
   assert.equal(m.sides[0].power[2], MAX_POWER);
   assert.ok(!m.powerUp(0, 2));
-  const t = place(m, 0, 2), u = place(m, 0, 3);
+  const t = m.units(0).find((x) => x.ext.deck === 2)!, u = place(m, 0, 3);
   assert.ok(t.stats.dmg > 0);
   const dmg = u.stats.dmg;
   m.powerUp(0, 3);
@@ -490,4 +494,39 @@ test('starter deck and every arena unlock refer to real towers', () => {
   assert.ok(FAMILIES.every((f) => PVP_UNITS.some((t) => t.family === f)));
   assert.equal(TOWERS.length, 48);
   assert.equal(deckCards(newProfile(T0)).length, DECK_SIZE);
+});
+
+test('damage numbers round to hundreds and thousands', async () => {
+  const { fmtDamage } = await import('../src/ui/format');
+  assert.equal(fmtDamage(37.4), '37');
+  assert.equal(fmtDamage(999.4), '999');
+  assert.equal(fmtDamage(1234), '1.2K');
+  assert.equal(fmtDamage(9960), '10.0K');
+  assert.equal(fmtDamage(12_345), '12K');
+  assert.equal(fmtDamage(1_540_000), '1.5M');
+});
+
+test('bosses can be beaten by casual play (calibration guard)', async () => {
+  const { PvpBot } = await import('../src/pvp/bot');
+  const { startLevel } = await import('../src/pvp/economy');
+  const { STARTER_DECK } = await import('../src/pvp/profile');
+  let titan = 0, titanKilled = 0, maxi = 0, maxiKilled = 0;
+  for (let i = 0; i < 6; i++) {
+    const deck = STARTER_DECK.map((id) => ({ id, level: startLevel(id), talents: [-1, -1, -1, -1] }));
+    const m = new PvpMatch({ name: 'a', deck }, { name: 'b', deck }, 500 + i);
+    const bots = [new PvpBot(m, 0, 0.2, i), new PvpBot(m, 1, 0.2, i + 9)];
+    const seen = new Map<number, { type: string; e: { alive: boolean; hp: number } }>();
+    while (!m.ended && m.time < 600) {
+      for (const b of bots) b.update((1 / 30) * 0.35); // a slow, casual player
+      m.step(1 / 30);
+      for (const e of m.sim.enemies) if (e.def.boss && !seen.has(e.id)) seen.set(e.id, { type: e.def.id, e });
+      m.events.length = 0; m.sim.events.length = 0;
+    }
+    for (const r of seen.values()) {
+      if (r.type === 'titan' && m.wave >= 9) { titan++; if (r.e.hp <= 0) titanKilled++; }
+      if (r.type === 'maximizer') { maxi++; if (r.e.hp <= 0) maxiKilled++; }
+    }
+  }
+  assert.ok(titan > 0 && titanKilled / titan >= 0.9, `wave 8 Titan killed ${titanKilled}/${titan}`);
+  assert.ok(maxi > 0 && maxiKilled / maxi >= 0.6, `wave 12 Maximizer killed ${maxiKilled}/${maxi}`);
 });

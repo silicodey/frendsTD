@@ -1,3 +1,5 @@
+import { ScorePlayer, SOUNDTRACKS } from './score';
+
 /** Fully synthesized audio: no samples, everything is generated with WebAudio. */
 type Wave = OscillatorType;
 
@@ -18,8 +20,13 @@ export class AudioEngine {
   private pad: { osc: OscillatorNode[]; gain: GainNode; filter: BiquadFilterNode } | null = null;
   sfxOn = true;
   musicOn = true;
-  intensity = 0; // 0 calm (menus/build) .. 1 combat
+  private _intensity = 0; // 0 calm (menus/build) .. 1 combat
   private curIntensity = 0;
+  /** The cinematic soundtrack (live play). The older generative score is kept for the trailer's offline render. */
+  private score: ScorePlayer | null = null;
+  track = 0;
+  get intensity() { return this._intensity; }
+  set intensity(v: number) { this._intensity = v; this.score?.setIntensity(v); }
 
   private now() { return this.offline ? this.clock : this.ctx!.currentTime; }
 
@@ -42,9 +49,15 @@ export class AudioEngine {
     if (this.ctx) { if (!this.offline && this.ctx.state === 'suspended') void (this.ctx as AudioContext).resume(); return; }
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
-    this.init(new AC());
-    this.startMusic();
+    const ctx = new AC();
+    this.init(ctx);
+    this.score = new ScorePlayer(ctx, this.musicBus);
+    if (this.musicOn) void this.score.play(this.track);
   }
+
+  static readonly tracks = SOUNDTRACKS;
+  /** Pick the soundtrack (index into AudioEngine.tracks). */
+  setTrack(i: number) { this.track = i; if (this.musicOn) void this.score?.play(i); }
 
   /** Render into an OfflineAudioContext: set `clock`, then call the usual sound methods. */
   attachOffline(ctx: OfflineAudioContext) {
@@ -54,7 +67,11 @@ export class AudioEngine {
   }
 
   setSfx(on: boolean) { this.sfxOn = on; if (this.ctx) this.sfxBus.gain.setTargetAtTime(on ? 0.75 : 0, this.ctx.currentTime, 0.05); }
-  setMusic(on: boolean) { this.musicOn = on; if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? 0.5 : 0, this.ctx.currentTime, 0.2); }
+  setMusic(on: boolean) {
+    this.musicOn = on;
+    if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? 0.5 : 0, this.ctx.currentTime, 0.2);
+    if (on) void this.score?.play(this.track); else this.score?.stop();
+  }
   suspend(s: boolean) { if (!this.ctx || this.offline) return; const c = this.ctx as AudioContext; if (s) void c.suspend(); else void c.resume(); }
 
   private ok(key: string, gap: number) {

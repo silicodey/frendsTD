@@ -580,3 +580,13 @@ svg { display: block; }
 .on-dev[open] { gap: 10px; }
 .on-dev summary { cursor: pointer; }
 .on-dev .field, .on-dev .btn { margin-top: 8px; }
+/* duel damage numbers: white for hits, orange for crits */
+.float-text.hitn { color: #f4f7ff; font-size: 13px; font-weight: 700; text-shadow: 0 1px 0 #000, 0 0 6px rgba(0, 0, 0, 0.95); }
+.float-text.hitc { color: #ff9b2f; font-size: 16px; font-weight: 800; text-shadow: 0 1px 0 #2a1000, 0 0 8px rgba(0, 0, 0, 0.95), 0 0 12px rgba(255, 120, 20, 0.55); }
+.pv-card.none img { filter: grayscale(0.85) brightness(0.55); }
+.pv-card.none .pv-cost { color: #5d6780; }
+/* long-press a unit card for its details (no system callout / text selection) */
+.pv-card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.card-info .us-top img { width: 96px; height: 96px; }
+.card-info .desc { margin: 0; }
+.set span i { display: block; margin-top: 3px; font: 500 11px/1.2 var(--display); font-style: normal; color: var(--dim); }

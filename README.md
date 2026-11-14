@@ -161,7 +161,7 @@ Duels use deterministic lockstep (`src/net/protocol.ts`, `server/index.ts`):
 | `src/render/fx.ts`, `view.ts` | Particles, beams, lightning, shockwaves; instanced enemies, health bars, shields |
 | `src/render/thumbs.ts` | Tower and enemy portraits rendered by the game renderer for the UI |
 | `src/ui/`, `src/style.css` | Menus and HUD (plain DOM) |
-| `src/audio/audio.ts` | Synthesized sound effects and generative music (WebAudio) |
+| `src/audio/audio.ts`, `score.ts` | Synthesized sound effects; three cinematic soundtracks (Siege, Shadow Protocol, Ascension) composed in code for strings, brass, choir, war drums and ostinato, rendered once per session into seamless two-stem loops (calm + action) that crossfade with the fight |
 | `src/pvp/` | Duels: roster logic, signatures and talents, economy, profile, match engine, AI rival, battle HUD and screens |
 | `src/net/`, `server/` | Online duels: lockstep protocol, client connection with clock sync and resume, the room/relay/referee server |
 | `tests/` | Unit tests for the duel rules, economy, abilities and bosses (`npm test`) |
@@ -171,6 +171,8 @@ Duels use deterministic lockstep (`src/net/protocol.ts`, `server/index.ts`):
 ```bash
 npm test                 # duel rules, economy, profile, abilities, bosses, AI-vs-AI fairness, online lockstep + server
 npm run duel -- 30       # 30 headless duels between AI rivals
+npx tsx tools/bosses.ts 16 0 0.2 0.35   # boss kill rates: 16 matches, starter decks, casual pace
+npx tsx tools/calibrate.ts              # re-derive per-unit balance (rewrites src/pvp/calibration.ts)
 ```
 
 
@@ -206,7 +208,14 @@ at render time and not committed; without network access the tool falls back to 
 
 ## Performance notes
 
-Enemies are GPU-instanced per type, towers are 2–5 draw calls each, and all effects are pooled. The renderer
-lowers its internal resolution when the frame rate drops and, on the *Auto* graphics setting, falls back to
-cheaper quality tiers (shadows off, fewer particles) if that is not enough. Graphics can also be set manually
-in Settings.
+Enemies are GPU-instanced per type, towers are 2–5 draw calls each, and all effects are pooled.
+
+Phones heat up when a game redraws everything as fast as the screen allows, so frendsTD doesn't:
+
+- **Frame cap.** 60 fps in play (a 120 Hz phone would otherwise draw twice as often), 30 fps behind menus.
+- **Graphics levels.** *High* (2× pixels, 4× MSAA); *Balanced*, the phone default (1.5× pixels, 2× MSAA,
+  smaller shadow map); *Battery saver* (30 fps, 1× pixels, no glow, no shadows). Shadows are redrawn every
+  2nd–3rd frame rather than every frame.
+- **Auto** adapts: it lowers resolution when frames drop, falls back a level if that's not enough, and after
+  10 minutes of continuous play on a phone it eases off a level before the device gets hot.
+- **Music** is rendered once into a loop (see below), so playing it costs almost nothing.

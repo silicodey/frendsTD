@@ -75,7 +75,9 @@ export class Thumbs {
     const pr = r.getPixelRatio();
     r.getViewport(_vp);
     r.setViewport(0, 0, S / pr, S / pr);
+    r.shadowMap.needsUpdate = true; // the game throttles shadow updates; a portrait always needs fresh ones
     this.composer.render(0);
+    r.shadowMap.needsUpdate = true; // and the next game frame needs its own back
     r.setViewport(_vp);
     this.canvas.width = this.canvas.height = size;
     const ctx = this.canvas.getContext('2d')!;

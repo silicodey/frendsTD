@@ -158,7 +158,7 @@ export class Fx {
       this.group.add(l);
       this.lights.push({ l, t: 1, dur: 1, power: 0 });
     }
-    if (textLayer) for (let i = 0; i < 36; i++) {
+    if (textLayer) for (let i = 0; i < 56; i++) {
       const el = document.createElement('div');
       el.className = 'float-text';
       textLayer.appendChild(el);

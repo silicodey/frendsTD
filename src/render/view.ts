@@ -8,6 +8,7 @@ import { Builder, cyl, oct, tor } from './builder';
 import type { Engine } from './engine';
 import { enemyModel, type EnemyModel } from './enemyModels';
 import { Fx } from './fx';
+import { fmtDamage } from '../ui/format';
 import { additive, makePbr } from './materials';
 import { droneGeometry, towerModel, type TowerModel } from './towerModels';
 
@@ -172,6 +173,8 @@ export class GameView {
   /** Duels: which lane is the viewer's (online player 2 plays the top lane, seen from the other end). */
   mySide = 0;
   private badges = new Map<number, THREE.Sprite>();
+  /** Duels: damage dealt per enemy, gathered for a moment and shown as one number (white, or orange for crits). */
+  private dmgAcc = new Map<number, { e: Enemy; n: number; c: number; t: number }>();
   root = new THREE.Group();
   onEvent: ((ev: SimEvent) => void) | null = null;
   private healthBarCap = 400;
@@ -311,6 +314,14 @@ export class GameView {
   load(sim: Sim, theme: Theme) {
     this.unload();
     this.sim = sim;
+    if (sim.sided) {
+      sim.onDamage = (e, dealt, _src, crit) => {
+        if (dealt <= 0 || (!this.showAllGains && e.pathIdx !== this.mySide)) return;
+        let a = this.dmgAcc.get(e.id);
+        if (!a) { if (this.dmgAcc.size >= 80) return; this.dmgAcc.set(e.id, (a = { e, n: 0, c: 0, t: 0 })); }
+        if (crit) a.c += dealt; else a.n += dealt;
+      };
+    }
     this.board = new Board(this.engine, sim, theme);
     // pre-create enemy batches for every type that can appear (avoids hitches mid-wave)
     const types = new Set<string>();
@@ -351,6 +362,7 @@ export class GameView {
   unload() {
     for (const v of this.towers.values()) { this.root.remove(v.group); v.dispose(); }
     this.towers.clear();
+    this.dmgAcc.clear();
     for (const b of this.badges.values()) { this.root.remove(b); b.material.dispose(); }
     this.badges.clear();
     for (const b of this.batches.values()) { this.root.remove(b.mesh); b.mesh.geometry.dispose(); (b.mesh.material as THREE.Material).dispose(); }
@@ -541,7 +553,7 @@ export class GameView {
         const s = e.def.size;
         fx.burst(e.x, e.y + 0.25 * s, e.z, e.def.color, Math.round(6 + s * 8), 2.2 + s, 0.09 + s * 0.03, 0.5, 5, 0.5);
         fx.flash(e.x, e.y + 0.25 * s, e.z, e.def.color, 0.8 + s * 0.9, 0.2, 1.3);
-        if (!this.sim.sided || e.pathIdx === this.mySide || this.showAllGains) fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold');
+        if (!this.sim.sided) fx.text(e.x, e.y + 0.5 + s * 0.3, e.z, `+${ev.n}`, 'gold'); // duels show damage numbers instead
         this.ghosts.push({ type: e.def.id, x: e.x, y: e.y, z: e.z, yaw: Math.atan2(e.dx, e.dz), scale: s, t: 0 });
         if (e.def.boss || s >= 1.6) {
           fx.explosion(e.x, e.y + 0.4, e.z, e.def.color, s * 1.3, true);
@@ -614,6 +626,7 @@ export class GameView {
     fx.beginFrame();
     for (const ev of sim.events) { this.handle(ev); this.onEvent?.(ev); }
     sim.events.length = 0;
+    if (this.dmgAcc.size) this.flushDamage(dt);
     this.board?.update(dt, time, sim.state === 'wave');
 
     // towers
@@ -753,6 +766,19 @@ export class GameView {
 
     (this.bubbles.material as THREE.ShaderMaterial).uniforms.uTime.value = time;
     fx.update(dt);
+  }
+
+  private flushDamage(dt: number) {
+    let shown = 0;
+    for (const [id, a] of this.dmgAcc) {
+      a.t += dt;
+      if (a.t < 0.35 && a.e.alive) continue;
+      this.dmgAcc.delete(id);
+      if (shown >= 8) continue; // a crowded frame drops the extras rather than flooding the screen
+      const e = a.e, y = e.y + e.def.size * 0.6 + 0.25, j = ((id * 0.618) % 1 - 0.5) * 0.35;
+      if (a.c >= 0.5) { this.fx.text(e.x + j, y + 0.18, e.z, fmtDamage(a.c), 'hitc'); shown++; }
+      if (a.n >= 0.5) { this.fx.text(e.x - j, y, e.z, fmtDamage(a.n), 'hitn'); shown++; }
+    }
   }
 
   /** A rank badge at the near corner of a duel unit's cell (near = toward the camera, which turns round for player 2). */

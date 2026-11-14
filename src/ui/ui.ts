@@ -1,3 +1,4 @@
+import { AudioEngine } from '../audio/audio';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { LEVELS, THEMES, levelUnlocked } from '../data/levels';
 import { MAX_LEVEL, TIER_UNLOCK, TOWERS, TOWER_BY_ID, approxDps, traits, upgradeCost } from '../data/towers';
@@ -92,6 +93,14 @@ export class UI {
       case 'settings': this.settings(); break;
       case 'toggle-music': app.save.data.music = !app.save.data.music; app.save.write(); app.applySettings(); this.refreshSettings(); break;
       case 'toggle-sfx': app.save.data.sfx = !app.save.data.sfx; app.save.write(); app.applySettings(); this.refreshSettings(); break;
+      case 'music-track': {
+        const n = AudioEngine.tracks.length;
+        app.save.data.track = (app.save.data.track + 1) % n;
+        if (!app.save.data.music) app.save.data.music = true;
+        app.save.write(); app.applySettings(); this.refreshSettings();
+        this.say(`Soundtrack: ${AudioEngine.tracks[app.save.data.track].name}`);
+        break;
+      }
       case 'quality': {
         const order = ['auto', 'high', 'medium', 'low'] as const;
         app.save.data.quality = order[(order.indexOf(app.save.data.quality) + 1) % order.length];
@@ -294,23 +303,38 @@ export class UI {
   closeModal() { this.modal.hidden = true; this.modal.innerHTML = ''; }
   modalOpen() { return !this.modal.hidden; }
 
+  /** Music, soundtrack and sound-effect switches (menus, campaign pause and the duel menu all use these). */
+  soundRows() {
+    const d = this.app.save.data;
+    const tr = AudioEngine.tracks[d.track % AudioEngine.tracks.length];
+    return `<button class="set" data-act="toggle-music">${ICON.music}<span>Music</span><b class="${d.music ? 'on' : ''}">${d.music ? 'On' : 'Off'}</b></button>
+      <button class="set track" data-act="music-track">${ICON.play}<span>Soundtrack<i>${esc(tr.mood)}</i></span><b class="on">${esc(tr.name)} ›</b></button>
+      <button class="set" data-act="toggle-sfx">${ICON.sound}<span>Sound effects</span><b class="${d.sfx ? 'on' : ''}">${d.sfx ? 'On' : 'Off'}</b></button>`;
+  }
+
+  /** Called to redraw the duel menu after a sound setting changes there. */
+  duelMenuRefresh: (() => void) | null = null;
+
   private settingsBody(inGame: boolean) {
     const d = this.app.save.data;
-    const q = d.quality[0].toUpperCase() + d.quality.slice(1);
+    const q = ({ auto: 'Auto', high: 'High', medium: 'Balanced', low: 'Battery saver' } as const)[d.quality];
     return `<div class="set-list">
-      <button class="set" data-act="toggle-music">${ICON.music}<span>Music</span><b class="${d.music ? 'on' : ''}">${d.music ? 'On' : 'Off'}</b></button>
-      <button class="set" data-act="toggle-sfx">${ICON.sound}<span>Sound effects</span><b class="${d.sfx ? 'on' : ''}">${d.sfx ? 'On' : 'Off'}</b></button>
-      <button class="set" data-act="quality">${ICON.gear}<span>Graphics</span><b class="on">${q}</b></button>
+      ${this.soundRows()}
+      <button class="set" data-act="quality">${ICON.gear}<span>Graphics<i>${d.quality === 'low' ? '30 fps, no glow: coolest and longest battery' : d.quality === 'auto' ? 'Adapts to your device and eases off in long sessions' : d.quality === 'high' ? 'Sharpest; phones run warmer' : 'Smooth 60 fps at a lighter load'}</i></span><b class="on">${q}</b></button>
       ${inGame ? '' : `<button class="btn ghost" data-act="reset-ask">Erase progress</button>`}
     </div>`;
   }
 
-  private settingsMode: 'menu' | 'pause' = 'menu';
+  settingsMode: 'menu' | 'pause' | 'duel' = 'menu';
   settings() {
     this.settingsMode = 'menu';
     this.openModal(`<div class="sheet small"><button class="icon-btn close" data-act="close" aria-label="Close">${ICON.close}</button><h2>Settings</h2>${this.settingsBody(false)}</div>`);
   }
-  private refreshSettings() { if (this.settingsMode === 'pause') this.pause(); else this.settings(); }
+  private refreshSettings() {
+    if (this.settingsMode === 'pause') this.pause();
+    else if (this.settingsMode === 'duel') this.duelMenuRefresh?.();
+    else this.settings();
+  }
 
   pause() {
     this.settingsMode = 'pause';

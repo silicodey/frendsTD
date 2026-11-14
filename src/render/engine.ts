@@ -72,6 +72,11 @@ export class Engine {
   private fps = 60; private fpsT = 0; private frames = 0; private slowStreak = 0; private fastStreak = 0;
   autoDpr = true;
   maxDpr = 2;
+  /** Frames per second to aim for (menus and Battery saver run at 30 to keep phones cool). */
+  fpsCap = 60;
+  /** Shadows are redrawn every Nth frame, not every frame (they barely move). */
+  private shadowEvery = 2;
+  private frameNo = 0;
   private bounds = { cols: 9, rows: 14, top: 0, bottom: 0 };
 
   constructor(canvas: HTMLCanvasElement) {
@@ -82,6 +87,7 @@ export class Engine {
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.info.autoReset = true;
 
     const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 });
@@ -99,11 +105,22 @@ export class Engine {
     this.scene.add(this.camera);
   }
 
+  /**
+   * high: sharp (2× pixels), 4× MSAA, shadows every 2nd frame.
+   * medium ("Balanced", the phone default): 1.5× pixels, 2× MSAA, shadows every 3rd frame.
+   * low ("Battery saver"): 1× pixels, no glow, no shadows, 30 fps.
+   */
   setQuality(q: Quality) {
     this.quality = q;
     this.maxDpr = q === 'high' ? 2 : q === 'medium' ? 1.5 : 1;
     this.renderer.shadowMap.enabled = q !== 'low';
-    this.bloom.strength = q === 'low' ? 0.2 : 0.26;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.shadowEvery = q === 'high' ? 2 : 3;
+    this.bloom.enabled = q !== 'low';
+    this.bloom.strength = 0.26;
+    const samples = q === 'high' ? 4 : 2;
+    const c = this.composer as unknown as { renderTarget1?: THREE.WebGLRenderTarget; renderTarget2?: THREE.WebGLRenderTarget };
+    for (const rt of [c.renderTarget1, c.renderTarget2]) if (rt && rt.samples !== samples) { rt.samples = samples; rt.dispose(); }
     this.dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr);
     this.applySize();
   }
@@ -248,6 +265,7 @@ export class Engine {
     const gu = this.grade.uniforms;
     gu.uDamage.value = this.damage;
     gu.uTime.value = this.time;
+    if (this.renderer.shadowMap.enabled && this.frameNo++ % this.shadowEvery === 0) this.renderer.shadowMap.needsUpdate = true;
     this.composer.render(dt);
 
     // adaptive resolution
@@ -255,7 +273,8 @@ export class Engine {
     if (this.fpsT >= 0.5) {
       this.fps = this.frames / this.fpsT; this.frames = 0; this.fpsT = 0;
       if (this.autoDpr && this.time > 2) {
-        if (this.fps < 45) { this.slowStreak++; this.fastStreak = 0; } else if (this.fps > 57) { this.fastStreak++; this.slowStreak = 0; } else { this.slowStreak = 0; this.fastStreak = 0; }
+        const cap = this.fpsCap;
+        if (this.fps < cap * 0.75) { this.slowStreak++; this.fastStreak = 0; } else if (this.fps > cap * 0.95) { this.fastStreak++; this.slowStreak = 0; } else { this.slowStreak = 0; this.fastStreak = 0; }
         const maxD = Math.min(window.devicePixelRatio || 1, this.maxDpr);
         if (this.slowStreak >= 2 && this.dpr > 0.75) { this.dpr = Math.max(0.75, this.dpr * 0.85); this.applySize(); this.slowStreak = 0; }
         else if (this.fastStreak >= 8 && this.dpr < maxD) { this.dpr = Math.min(maxD, this.dpr * 1.1); this.applySize(); this.fastStreak = 0; }
