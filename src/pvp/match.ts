@@ -6,6 +6,7 @@ import type { TowerStats } from '../data/towers';
 import { RARITY_INFO, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, abilityPower, talentMods, type Signature, type UnitMods } from './signatures';
 import { CAL } from './calibration';
+import { pickN } from '../net/protocol';
 import { hypot, pow } from '../sim/dmath';
 
 /**
@@ -495,7 +496,7 @@ export class PvpMatch {
         const adj = this.units(side).filter((u) => u !== t && hypot(u.x - t.x, u.z - t.z) < 1.6 && u.def.kind !== 'support');
         if (!adj.length) return;
         const n = spec.flags.has('fanOut') ? adj.length : spec.flags.has('twoCalls') ? 2 : 1;
-        const pick = [...adj].sort(() => this.rng() - 0.5).slice(0, n);
+        const pick = pickN(adj, n, this.rng);
         for (const u of pick) { u.ext.ocUntil = this.time + 2.5 + (spec.flags.has('longCall') ? 1.5 : 0); u.ext.ocPow = 1.0 * spec.ap; }
         this.ability(t, 'Tool Call', pick.length);
         break;
@@ -546,7 +547,7 @@ export class PvpMatch {
         }
       } else if (boss.def.id === 'maximizer') {
         // Encrypt: two random units are jammed
-        const set = [...units].sort(() => this.rng() - 0.5).slice(0, 2);
+        const set = pickN(units, 2, this.rng);
         for (const u of set) { u.jamT = Math.max(u.jamT, 3); u.targets.length = 0; this.sim.events.push({ t: 'jam', tower: u, enemy: boss, x: u.x, z: u.z, x2: boss.x, y2: boss.y, z2: boss.z }); }
         this.events.push({ t: 'bossCast', side, kind: 'encrypt', text: 'Encrypt: units jammed', x: set[0].x, z: set[0].z });
       }

@@ -33,6 +33,9 @@ interface Seat {
   name: string; deck: DeckCard[]; ready: boolean; token: string;
   droppedAt: number; // 0 while connected
   forfeited: boolean;
+  timedOut: boolean;
+  /** Lobby only: hold the seat until then for a player who dropped (so they can still see how the match ended). */
+  holdUntil: number;
   cmdWindow: number; cmdCount: number;
 }
 
@@ -49,11 +52,13 @@ interface Room {
   hashes: Map<number, number>;
   emptySince: number;
   countdownTimer: NodeJS.Timeout | null;
+  /** How the last match ended, for a player who comes back after it finished. */
+  lastEnd: ServerMsg | null;
 }
 
 interface Conn { ws: WebSocket; hello: boolean; name: string; deck: DeckCard[] | null; room: Room | null; side: number; alive: boolean }
 
-export interface ServerOptions { port?: number; host?: string; staticDir?: string | null; quiet?: boolean; countdownMs?: number }
+export interface ServerOptions { port?: number; host?: string; staticDir?: string | null; quiet?: boolean; countdownMs?: number; graceMs?: number }
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -67,6 +72,7 @@ const now = () => performance.timeOrigin + performance.now();
 export function startServer(opts: ServerOptions = {}) {
   const log = (...a: unknown[]) => { if (!opts.quiet) console.log(new Date().toISOString(), ...a); };
   const rooms = new Map<string, Room>();
+  const GRACE = opts.graceMs ?? RECONNECT_GRACE_MS;
   const staticDir = opts.staticDir === null ? null : path.resolve(opts.staticDir ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist'));
 
   // ---------------------------------------------------------------- static files (the game itself)
@@ -110,13 +116,13 @@ export function startServer(opts: ServerOptions = {}) {
     let code = randomCode(() => randomInt(1 << 30) / (1 << 30));
     for (let i = 0; rooms.has(code) && i < 50; i++) code = randomCode(() => randomInt(1 << 30) / (1 << 30));
     if (rooms.has(code)) return null;
-    const r: Room = { code, seats: [null, null], state: 'lobby', info: null, lock: null, cmds: new Map(), log: [], pending: [], upto: -1, hashes: new Map(), emptySince: 0, countdownTimer: null };
+    const r: Room = { code, seats: [null, null], state: 'lobby', info: null, lock: null, cmds: new Map(), log: [], pending: [], upto: -1, hashes: new Map(), emptySince: 0, countdownTimer: null, lastEnd: null };
     rooms.set(code, r);
     return r;
   };
 
   const seatFor = (c: Conn, r: Room, side: number) => {
-    const seat: Seat = { conn: c, name: c.name, deck: c.deck!, ready: false, token: randomBytes(12).toString('hex'), droppedAt: 0, forfeited: false, cmdWindow: 0, cmdCount: 0 };
+    const seat: Seat = { conn: c, name: c.name, deck: c.deck!, ready: false, token: randomBytes(12).toString('hex'), droppedAt: 0, forfeited: false, timedOut: false, holdUntil: 0, cmdWindow: 0, cmdCount: 0 };
     r.seats[side] = seat;
     c.room = r; c.side = side;
     send(c, { t: 'room', code: r.code, you: side, token: seat.token });
@@ -141,7 +147,8 @@ export function startServer(opts: ServerOptions = {}) {
     };
     r.state = 'countdown'; r.info = info;
     r.cmds = new Map(); r.log = []; r.pending = []; r.upto = -1; r.hashes = new Map();
-    for (const s of r.seats as Seat[]) s.forfeited = false;
+    for (const s of r.seats as Seat[]) { s.forfeited = false; s.timedOut = false; s.holdUntil = 0; }
+    r.lastEnd = null;
     r.lock = new Lockstep(new PvpMatch(info.setups[0], info.setups[1], info.seed), (t) => r.cmds.get(t));
     broadcast(r, { t: 'start', info });
     lobby(r);
@@ -151,7 +158,7 @@ export function startServer(opts: ServerOptions = {}) {
 
   const pushCmd = (r: Room, side: number, c: TimedCmd['c']) => {
     const tick = Math.max(serverTick(r) + INPUT_DELAY, r.upto + 1);
-    const tc: TimedCmd = { tick, side, c };
+    const tc: TimedCmd = { tick, side, c, n: r.log.length };
     let list = r.cmds.get(tick);
     if (!list) r.cmds.set(tick, (list = []));
     list.push(tc);
@@ -161,23 +168,41 @@ export function startServer(opts: ServerOptions = {}) {
 
   const finish = (r: Room, reason: string) => {
     const m = r.lock!.match;
-    broadcast(r, { t: 'end', winner: m.winner, tick: r.lock!.tick, reason });
+    const end: ServerMsg = { t: 'end', winner: m.winner, tick: r.lock!.tick, reason };
+    broadcast(r, end);
+    r.lastEnd = end;
     log(`room ${r.code}: ended at tick ${r.lock!.tick}, winner ${m.winner} (${reason})`);
     r.state = 'lobby';
     r.lock = null;
-    for (const [i, s] of r.seats.entries()) if (s) { s.ready = false; if (!s.conn) r.seats[i] = null; }
+    // a player who is away keeps their seat for two minutes, so coming back shows how it ended
+    for (const s of r.seats) if (s) { s.ready = false; if (!s.conn) s.holdUntil = now() + 120000; }
     lobby(r);
   };
 
   /** Advance every running match to the latest final tick and tell both players. */
+  /** A match that hits a bug ends as a no-contest instead of taking the whole server (and every other match) down. */
+  const abort = (r: Room, err: unknown) => {
+    log(`room ${r.code}: match aborted after an error`, err);
+    broadcast(r, { t: 'end', winner: -1, tick: r.lock?.tick ?? 0, reason: 'error' });
+    r.state = 'lobby'; r.lock = null; r.info = null;
+    for (const s of r.seats) if (s) s.ready = false;
+    lobby(r);
+  };
+
   const tickRooms = () => {
     for (const r of rooms.values()) {
-      if (!r.lock || !r.info || (r.state !== 'playing' && r.state !== 'countdown')) continue;
+      try { tickRoom(r); } catch (e) { abort(r, e); }
+    }
+  };
+
+  const tickRoom = (r: Room) => {
+    {
+      if (!r.lock || !r.info || (r.state !== 'playing' && r.state !== 'countdown')) return;
       const st = serverTick(r);
-      if (st < 0) continue;
+      if (st < 0) return;
       if (r.state === 'countdown') { r.state = 'playing'; lobby(r); }
       const upto = st + INPUT_DELAY - 1;
-      if (upto <= r.upto && !r.pending.length) continue;
+      if (upto <= r.upto && !r.pending.length) return;
       const lock = r.lock;
       while (lock.tick <= upto && !lock.match.ended) {
         lock.step();
@@ -191,7 +216,7 @@ export function startServer(opts: ServerOptions = {}) {
       r.pending = [];
       lock.match.events.length = 0;
       lock.match.sim.events.length = 0;
-      if (lock.match.ended) finish(r, r.seats.some((s) => s?.forfeited) ? 'forfeit' : 'hearts');
+      if (lock.match.ended) finish(r, r.seats.some((s) => s?.timedOut) ? 'timeout' : r.seats.some((s) => s?.forfeited) ? 'forfeit' : 'hearts');
     }
   };
 
@@ -204,7 +229,7 @@ export function startServer(opts: ServerOptions = {}) {
     if (r.state === 'playing' || (r.state === 'countdown' && r.info && now() >= r.info.startAt)) {
       seat.conn = null;
       if (quitting) { if (!seat.forfeited) { seat.forfeited = true; pushCmd(r, c.side, { k: 'f' }); } }
-      else { seat.droppedAt = now(); broadcast(r, { t: 'peer', side: c.side, connected: false, graceMs: RECONNECT_GRACE_MS }); }
+      else { seat.droppedAt = now(); broadcast(r, { t: 'peer', side: c.side, connected: false, graceMs: GRACE }); }
     } else {
       cancelCountdown(r);
       if (quitting) r.seats[c.side] = null;
@@ -241,7 +266,7 @@ export function startServer(opts: ServerOptions = {}) {
         if (!r) { fail(c, 'not_found', 'No room with that code. Check the letters with your friend.'); return; }
         if (c.room === r) return;
         if (r.state !== 'lobby') { fail(c, 'started', 'That match has already started.'); return; }
-        const free = r.seats.findIndex((s) => !s || (!s.conn && s.droppedAt && now() - s.droppedAt > RECONNECT_GRACE_MS));
+        const free = r.seats.findIndex((s) => !s || (!s.conn && s.droppedAt && now() - s.droppedAt > GRACE));
         if (free < 0) { fail(c, 'full', 'That room already has two players.'); return; }
         leaveRoom(c, true);
         seatFor(c, r, free);
@@ -259,6 +284,7 @@ export function startServer(opts: ServerOptions = {}) {
         c.room = r; c.side = side;
         send(c, { t: 'room', code: r.code, you: side, token: seat.token });
         if (r.info && r.lock && (r.state === 'playing' || r.state === 'countdown')) send(c, { t: 'sync', info: r.info, upto: r.upto, cmds: r.log });
+        else if (r.lastEnd) send(c, r.lastEnd); // the match finished while they were away
         broadcast(r, { t: 'peer', side, connected: true });
         lobby(r);
         return;
@@ -321,9 +347,9 @@ export function startServer(opts: ServerOptions = {}) {
     const t = now();
     for (const [code, r] of rooms) {
       for (const [side, s] of r.seats.entries()) {
-        if (!s || s.conn || !s.droppedAt || t - s.droppedAt < RECONNECT_GRACE_MS) continue;
-        if (r.state === 'playing' && r.lock && !r.lock.match.ended) { if (!s.forfeited) { s.forfeited = true; pushCmd(r, side, { k: 'f' }); log(`room ${code}: side ${side} timed out`); } }
-        else if (r.state === 'lobby') { r.seats[side] = null; lobby(r); }
+        if (!s || s.conn || !s.droppedAt || t - s.droppedAt < GRACE) continue;
+        if (r.state === 'playing' && r.lock && !r.lock.match.ended) { if (!s.forfeited) { s.forfeited = true; s.timedOut = true; pushCmd(r, side, { k: 'f' }); log(`room ${code}: side ${side} timed out`); } }
+        else if (r.state === 'lobby' && t > s.holdUntil) { r.seats[side] = null; lobby(r); }
       }
       const occupied = r.seats.some((s) => s?.conn);
       if (!occupied && (!r.seats.some(Boolean) || (r.emptySince && t - r.emptySince > 120000))) {
@@ -348,8 +374,14 @@ export function startServer(opts: ServerOptions = {}) {
   }));
   ready.then((p) => log(`frendsTD server on http://localhost:${p}  (duels: ws://localhost:${p}/ws${staticDir ? `, game from ${staticDir}` : ''})`));
 
+  /** Hosting platforms stop the old server on every deploy: tell players before their match disappears. */
+  const shutdown = (why: string) => {
+    log(`shutting down (${why}), ${rooms.size} rooms`);
+    for (const r of rooms.values()) broadcast(r, { t: 'error', code: 'restart', msg: 'The game server is restarting for an update. This match had to stop; please start a new one in a minute.' });
+  };
+
   return {
-    ready, rooms,
+    ready, rooms, shutdown,
     close: () => new Promise<void>((resolve) => {
       clearInterval(loop); clearInterval(sweep); clearInterval(heartbeat);
       for (const r of rooms.values()) if (r.countdownTimer) clearTimeout(r.countdownTimer);
@@ -360,4 +392,12 @@ export function startServer(opts: ServerOptions = {}) {
   };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) startServer();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const srv = startServer();
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(sig, () => { srv.shutdown(sig); setTimeout(() => process.exit(0), 400); });
+  }
+  // one unexpected error must not kill every match on the server
+  process.on('uncaughtException', (e) => console.error(new Date().toISOString(), 'uncaught', e));
+  process.on('unhandledRejection', (e) => console.error(new Date().toISOString(), 'unhandled rejection', e));
+}

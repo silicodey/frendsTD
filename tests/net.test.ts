@@ -5,7 +5,7 @@ import { PvpMatch, type PlayerSetup } from '../src/pvp/match';
 import { STARTER_DECK } from '../src/pvp/profile';
 import { startLevel } from '../src/pvp/economy';
 import {
-  HASH_EVERY, Lockstep, PROTO, applyCmd, cleanCmd, cleanCode, cleanDeck, cleanName, matchHash,
+  CmdBook, HASH_EVERY, Lockstep, PROTO, applyCmd, cleanCmd, cleanCode, cleanDeck, cleanName, matchHash, pickN,
   type ClientMsg, type ServerMsg, type TimedCmd,
 } from '../src/net/protocol';
 import { startServer } from '../server/index';
@@ -56,7 +56,7 @@ function script(seed: number, ticks: number): TimedCmd[] {
   const out: TimedCmd[] = [];
   for (let t = 30; t < ticks; t += 20 + Math.floor(r() * 40)) {
     const side = r() < 0.5 ? 0 : 1, x = r();
-    out.push({ tick: t, side, c: x < 0.75 ? { k: 's' } : { k: 'p', i: Math.floor(r() * 5) } });
+    out.push({ tick: t, side, c: x < 0.75 ? { k: 's' } : { k: 'p', i: Math.floor(r() * 5) }, n: out.length });
   }
   return out;
 }
@@ -265,4 +265,123 @@ test('server: wrong game version is turned away', async () => {
     a.send({ t: 'hello', proto: PROTO + 1, name: 'Old', deck });
     assert.equal((await a.wait('error')).code, 'version');
   } finally { a.ws.close(); await srv.close(); }
+});
+
+test('server: a restart warns players, and a fresh server says the match is gone', async () => {
+  const srv = startServer({ port: 0, staticDir: null, quiet: true, countdownMs: 200 });
+  const port = await srv.ready;
+  const url = `ws://localhost:${port}/ws`;
+  const a = new Client(url), b = new Client(url);
+  try {
+    await Promise.all([a.open(), b.open()]);
+    a.send({ t: 'hello', proto: PROTO, name: 'Ada', deck }); b.send({ t: 'hello', proto: PROTO, name: 'Bo', deck });
+    a.send({ t: 'create' });
+    const room = await a.wait('room');
+    b.send({ t: 'join', code: room.code });
+    await b.wait('room');
+    a.send({ t: 'ready', on: true }); b.send({ t: 'ready', on: true });
+    await a.wait('turn', (m) => m.upto > 10, 5000);
+    srv.shutdown('test');
+    assert.equal((await a.wait('error', (m) => m.code === 'restart')).code, 'restart');
+    assert.equal((await b.wait('error', (m) => m.code === 'restart')).code, 'restart');
+  } finally { a.ws.close(); b.ws.close(); await srv.close(); }
+  // the new server has never heard of that room
+  const srv2 = startServer({ port: 0, staticDir: null, quiet: true });
+  const port2 = await srv2.ready;
+  const c = new Client(`ws://localhost:${port2}/ws`);
+  try {
+    await c.open();
+    c.send({ t: 'hello', proto: PROTO, name: 'Ada', deck });
+    c.send({ t: 'resume', code: 'ABCD', token: 'x' });
+    assert.equal((await c.wait('error')).code, 'resume');
+  } finally { c.ws.close(); await srv2.close(); }
+});
+
+test('a command delivered twice (around a reconnect) is applied once', () => {
+  const book = new CmdBook();
+  const cmds: TimedCmd[] = [{ tick: 50, side: 0, c: { k: 's' }, n: 0 }, { tick: 50, side: 1, c: { k: 's' }, n: 1 }, { tick: 80, side: 0, c: { k: 's' }, n: 2 }];
+  book.add(cmds.slice(0, 2));
+  book.add(cmds);          // the full log after a resume
+  book.add(cmds.slice(2)); // and the same command again in the next turn
+  assert.equal(book.size, 3);
+  assert.equal(book.get(50)!.length, 2);
+  assert.equal(book.get(80)!.length, 1);
+  // and the match it drives is the same as with no duplicates
+  const run = (src: (t: number) => TimedCmd[] | undefined) => { const m = new PvpMatch(setup('a'), setup('b'), 3); const l = new Lockstep(m, src); while (l.tick < 600) l.step(); return matchHash(m); };
+  const clean = new Map<number, TimedCmd[]>([[50, cmds.slice(0, 2)], [80, cmds.slice(2)]]);
+  assert.equal(run((t) => book.get(t)), run((t) => clean.get(t)));
+});
+
+test('pickN picks distinct items deterministically', () => {
+  let s = 7; const r = () => ((s = (s * 48271) % 2147483647) / 2147483647);
+  const a = pickN([1, 2, 3, 4, 5], 2, r); s = 7; const b = pickN([1, 2, 3, 4, 5], 2, r);
+  assert.deepEqual(a, b);
+  assert.equal(new Set(a).size, 2);
+  assert.equal(pickN([1], 3, r).length, 1);
+});
+
+test('server: resuming while a move is in flight still gives the same match as the other player', async () => {
+  const srv = startServer({ port: 0, staticDir: null, quiet: true, countdownMs: 200 });
+  const port = await srv.ready;
+  const url = `ws://localhost:${port}/ws`;
+  const a = new Client(url), b = new Client(url);
+  try {
+    await Promise.all([a.open(), b.open()]);
+    a.send({ t: 'hello', proto: PROTO, name: 'Ada', deck }); b.send({ t: 'hello', proto: PROTO, name: 'Bo', deck });
+    a.send({ t: 'create' });
+    const room = await a.wait('room');
+    b.send({ t: 'join', code: room.code });
+    const broom = await b.wait('room');
+    a.send({ t: 'ready', on: true }); b.send({ t: 'ready', on: true });
+    await a.wait('turn', (m) => m.upto > 20, 5000);
+    b.ws.close();
+    await a.wait('peer', (m) => m.side === 1 && !m.connected);
+    const b2 = new Client(url); await b2.open();
+    b2.send({ t: 'hello', proto: PROTO, name: 'Bo', deck });
+    // a move lands on the server right as B resumes: it is in B's sync log AND in the next turn
+    a.send({ t: 'cmd', c: { k: 's' } });
+    b2.send({ t: 'resume', code: room.code, token: broom.token });
+    const sync = await b2.wait('sync');
+    const book = new CmdBook();
+    book.add(sync.cmds);
+    await sleep(400);
+    for (const m of b2.msgs) if (m.t === 'turn') book.add(m.cmds);
+    const aBook = new CmdBook();
+    for (const m of a.msgs) if (m.t === 'turn') aBook.add(m.cmds);
+    assert.equal(book.size, aBook.size, 'both players hold the same set of commands');
+    const play = (src: (t: number) => TimedCmd[] | undefined) => { const l = new Lockstep(new PvpMatch(sync.info.setups[0], sync.info.setups[1], sync.info.seed), src); while (l.tick < sync.upto) l.step(); return matchHash(l.match); };
+    assert.equal(play((t) => book.get(t)), play((t) => aBook.get(t)));
+    b2.ws.close();
+  } finally { a.ws.close(); b.ws.close(); await srv.close(); }
+});
+
+test('server: away past the grace period loses by timeout, and coming back shows the result in the room', async () => {
+  const srv = startServer({ port: 0, staticDir: null, quiet: true, countdownMs: 200, graceMs: 1200 });
+  const port = await srv.ready;
+  const url = `ws://localhost:${port}/ws`;
+  const a = new Client(url), b = new Client(url);
+  try {
+    await Promise.all([a.open(), b.open()]);
+    a.send({ t: 'hello', proto: PROTO, name: 'Ada', deck }); b.send({ t: 'hello', proto: PROTO, name: 'Bo', deck });
+    a.send({ t: 'create' });
+    const room = await a.wait('room');
+    b.send({ t: 'join', code: room.code });
+    const broom = await b.wait('room');
+    a.send({ t: 'ready', on: true }); b.send({ t: 'ready', on: true });
+    await a.wait('turn', (m) => m.upto > 10, 5000);
+    b.ws.close();
+    const end = await a.wait('end', () => true, 8000);
+    assert.equal(end.winner, 0);
+    assert.equal(end.reason, 'timeout');
+    const b2 = new Client(url); await b2.open();
+    b2.send({ t: 'hello', proto: PROTO, name: 'Bo', deck });
+    b2.send({ t: 'resume', code: room.code, token: broom.token });
+    assert.equal((await b2.wait('room')).you, 1, 'the seat was kept');
+    const e2 = await b2.wait('end');
+    assert.equal(e2.reason, 'timeout');
+    assert.equal(e2.winner, 0);
+    const lob = await b2.wait('lobby', (m) => m.state === 'lobby' && m.players.every((p) => p));
+    assert.ok(lob, 'both are back in the room for a rematch');
+    b2.ws.close();
+  } finally { a.ws.close(); b.ws.close(); await srv.close(); }
 });

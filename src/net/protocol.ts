@@ -15,7 +15,7 @@ import { TALENT_LEVELS, isSignatureId } from '../pvp/signatures';
  */
 
 /** Bump whenever game rules, balance or this protocol change: mismatched clients are turned away. */
-export const PROTO = 2;
+export const PROTO = 3;
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
 export const DT = 1 / TICK_HZ;
@@ -37,7 +37,8 @@ export type Cmd =
   | { k: 'm'; a: number; b: number } // merge tower a onto tower b
   | { k: 'f' }; // forfeit
 
-export interface TimedCmd { tick: number; side: number; c: Cmd }
+/** `n` numbers a match's commands 0, 1, 2… so a client never applies one twice (a reconnect can deliver it twice). */
+export interface TimedCmd { tick: number; side: number; c: Cmd; n: number }
 
 export interface LobbyPlayer { name: string; ready: boolean; connected: boolean; deck: DeckCard[] }
 export interface StartInfo { startAt: number; seed: number; theme: number; setups: [PlayerSetup, PlayerSetup] }
@@ -128,6 +129,34 @@ export function applyCmd(m: PvpMatch, side: number, c: Cmd): boolean {
       return !!m.merge(a, b);
     }
   }
+}
+
+/** The commands of one match, by tick, with duplicates (same `n`) ignored. */
+export class CmdBook {
+  byTick = new Map<number, TimedCmd[]>();
+  private seen = new Set<number>();
+  add(list: TimedCmd[]) {
+    for (const c of list) {
+      if (this.seen.has(c.n)) continue;
+      this.seen.add(c.n);
+      let l = this.byTick.get(c.tick);
+      if (!l) this.byTick.set(c.tick, (l = []));
+      l.push(c);
+    }
+  }
+  get(tick: number) { return this.byTick.get(tick); }
+  get size() { return this.seen.size; }
+}
+
+/** Pick n distinct items in a deterministic random order (never sort with a random comparator: the result
+ *  would depend on the JavaScript engine's sort algorithm). */
+export function pickN<T>(items: readonly T[], n: number, rng: () => number): T[] {
+  const a = [...items];
+  for (let i = 0; i < Math.min(n, a.length); i++) {
+    const j = i + Math.floor(rng() * (a.length - i));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
 }
 
 /** Advances a match tick by tick, applying the commands stamped for each tick first. */

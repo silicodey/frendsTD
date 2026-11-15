@@ -1,6 +1,6 @@
 import type { DeckCard } from '../pvp/match';
 import {
-  PROTO, TICK_MS, cleanCode,
+  CmdBook, PROTO, TICK_MS, cleanCode,
   type ClientMsg, type Cmd, type LobbyPlayer, type ServerMsg, type StartInfo, type TimedCmd,
 } from './protocol';
 import { GAME_SERVER } from './config';
@@ -65,7 +65,7 @@ export function inviteLink(code: string, server: string): string {
   return `${base}?room=${code}${sameSite ? '' : `&server=${encodeURIComponent(server)}`}`;
 }
 
-export type NetEvent = 'status' | 'room' | 'lobby' | 'start' | 'sync' | 'turn' | 'end' | 'peer' | 'error' | 'desync';
+export type NetEvent = 'status' | 'room' | 'lobby' | 'start' | 'sync' | 'turn' | 'end' | 'peer' | 'error' | 'desync' | 'lost';
 
 export interface LobbyState { code: string; state: 'lobby' | 'countdown' | 'playing' | 'ended'; players: (LobbyPlayer | null)[] }
 
@@ -79,7 +79,8 @@ export class OnlineSession {
   code = ''; you = -1; token = '';
   lobby: LobbyState | null = null;
   info: StartInfo | null = null;
-  cmds = new Map<number, TimedCmd[]>();
+  /** The match's commands by tick; a command delivered twice (e.g. around a reconnect) counts once. */
+  cmds = new CmdBook();
   upto = -1;
   result: { winner: number; tick: number; reason: string } | null = null;
   peerOnline = [true, true];
@@ -87,6 +88,10 @@ export class OnlineSession {
   desync = false;
   roomSince = 0; // local ms when we entered the current room
   rtt = 0;
+  /** The running match can't continue (the server restarted or forgot it): why, for the player. */
+  lost: string | null = null;
+  /** When the last match update arrived (performance.now ms). */
+  lastTurnAt = 0;
   /** The server is asleep (free hosting idles) and is being woken up: tell the player it takes a moment. */
   waking = false;
   private woke = false;
@@ -95,6 +100,7 @@ export class OnlineSession {
   private retry = 0;
   private retryTimer = 0;
   private pingTimer = 0;
+  private keepTimer = 0;
   private offset = 0; // server ms − performance.now()
   private samples: { rtt: number; off: number }[] = [];
   private listeners = new Set<(e: NetEvent) => void>();
@@ -131,7 +137,7 @@ export class OnlineSession {
    * Knock on its health page first (that wakes it) and only then open the game connection.
    */
   private wake() {
-    const health = this.url.replace(/^ws/i, 'http').replace(/\/ws$/, '/health');
+    const health = this.healthUrl();
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const giveUp = setTimeout(() => ctrl?.abort(), 90000);
     const slow = setTimeout(() => { if (this.status === 'connecting') { this.waking = true; this.emit('status'); } }, 2000);
@@ -143,6 +149,8 @@ export class OnlineSession {
     };
     fetch(health, { cache: 'no-store', signal: ctrl?.signal }).then(done, done);
   }
+
+  private healthUrl() { return this.url.replace(/^ws/i, 'http').replace(/\/ws$/, '/health'); }
 
   private openSocket() {
     let ws: WebSocket;
@@ -159,6 +167,10 @@ export class OnlineSession {
       for (let i = 0; i < 5; i++) setTimeout(() => this.ping(), i * 120);
       clearInterval(this.pingTimer);
       this.pingTimer = window.setInterval(() => this.ping(), 2000);
+      // free hosting may treat a server with only WebSocket traffic as idle and put it to sleep mid-match:
+      // a tiny web request every 4 minutes counts as activity
+      clearInterval(this.keepTimer);
+      this.keepTimer = window.setInterval(() => { void fetch(this.healthUrl(), { cache: 'no-store' }).catch(() => undefined); }, 240000);
       if (this.code && this.token) this.send({ t: 'resume', code: this.code, token: this.token });
       this.emit('status');
     };
@@ -170,7 +182,7 @@ export class OnlineSession {
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.ws = null;
-      clearInterval(this.pingTimer);
+      clearInterval(this.pingTimer); clearInterval(this.keepTimer);
       const wasOnline = this.status === 'online';
       this.status = 'offline';
       this.emit('status');
@@ -186,7 +198,7 @@ export class OnlineSession {
     this.want = false;
     if (this.code) this.send({ t: 'leave' });
     this.forgetRoom();
-    clearTimeout(this.retryTimer); clearInterval(this.pingTimer);
+    clearTimeout(this.retryTimer); clearInterval(this.pingTimer); clearInterval(this.keepTimer);
     const ws = this.ws;
     this.ws = null;
     try { ws?.close(); } catch { /* ignore */ }
@@ -220,22 +232,22 @@ export class OnlineSession {
   ready(on: boolean) { this.send({ t: 'ready', on }); }
   cmd(c: Cmd) { this.send({ t: 'cmd', c }); }
   hash(tick: number, h: number) { this.send({ t: 'hash', tick, h }); }
-  leaveRoom() { this.send({ t: 'leave' }); this.forgetRoom(); this.emit('room'); }
+  /** Drop the connection and let it reconnect (and resume our seat): for when updates stop arriving. */
+  kick() { try { this.ws?.close(); } catch { /* */ } }
+
+  /** Give up on the current match locally (the player has been told why). */
+  markLost(why: string) { if (!this.lost) { this.lost = why; this.emit('lost'); } }
+
+  leaveRoom() { this.send({ t: 'leave' }); this.forgetRoom(); this.lost = null; this.emit('room'); }
   refreshHello() { if (this.status === 'online') { const h = this.hello(); this.send({ t: 'hello', proto: PROTO, name: h.name, deck: h.deck }); } }
 
   private forgetRoom() {
     this.code = ''; this.you = -1; this.token = ''; this.lobby = null; this.info = null; this.result = null;
-    this.cmds = new Map(); this.upto = -1; this.desync = false; this.peerOnline = [true, true];
+    this.cmds = new CmdBook(); this.upto = -1; this.desync = false; this.peerOnline = [true, true];
     store.set(RESUME_KEY, null, session());
   }
 
-  private addCmds(list: TimedCmd[]) {
-    for (const c of list) {
-      let l = this.cmds.get(c.tick);
-      if (!l) this.cmds.set(c.tick, (l = []));
-      l.push(c);
-    }
-  }
+  private addCmds(list: TimedCmd[]) { this.cmds.add(list); }
 
   private onMessage(m: ServerMsg) {
     switch (m.t) {
@@ -252,7 +264,11 @@ export class OnlineSession {
       }
       case 'error':
         this.error = { code: m.code, msg: m.msg };
-        if (m.code === 'resume') this.forgetRoom();
+        if (m.code === 'restart' && this.info) { this.lost = m.msg; this.emit('lost'); }
+        if (m.code === 'resume') {
+          if (this.info && !this.result) { this.lost ??= 'This match is no longer on the server (you were away too long, or the server restarted). Start a new one.'; this.emit('lost'); }
+          this.forgetRoom();
+        }
         if (m.code === 'version') this.want = false;
         this.emit('error');
         break;
@@ -268,14 +284,19 @@ export class OnlineSession {
         this.emit('lobby');
         break;
       case 'start':
-        this.info = m.info; this.cmds = new Map(); this.upto = -1; this.result = null; this.desync = false;
+        this.info = m.info; this.cmds = new CmdBook(); this.upto = -1; this.result = null; this.desync = false; this.lost = null;
+        this.lastTurnAt = performance.now();
         this.emit('start');
         break;
       case 'sync':
-        this.info = m.info; this.cmds = new Map(); this.addCmds(m.cmds); this.upto = m.upto; this.result = null;
+        // the same match again (a reconnect): merge, never double up; a different one: start a fresh book
+        if (this.info?.seed !== m.info.seed) this.cmds = new CmdBook();
+        this.info = m.info; this.addCmds(m.cmds); this.upto = Math.max(this.upto, m.upto); this.result = null;
+        this.lastTurnAt = performance.now();
         this.emit('sync');
         break;
       case 'turn':
+        this.lastTurnAt = performance.now();
         this.addCmds(m.cmds);
         this.upto = Math.max(this.upto, m.upto);
         break;
@@ -285,7 +306,11 @@ export class OnlineSession {
         this.emit('peer');
         break;
       case 'desync': this.desync = true; this.emit('desync'); break;
-      case 'end': this.result = { winner: m.winner, tick: m.tick, reason: m.reason }; this.emit('end'); break;
+      case 'end':
+        this.result = { winner: m.winner, tick: m.tick, reason: m.reason };
+        if (m.reason === 'error') this.lost = 'The server hit a problem and had to stop this match. Sorry! Please start a new one.';
+        this.emit('end');
+        break;
     }
   }
 }

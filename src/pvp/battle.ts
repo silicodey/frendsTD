@@ -63,6 +63,16 @@ export class Duel {
   readonly foe: number;
   private lock: Lockstep | null = null;
   private apT = 0;
+  /** Online watchdog: when we last forced a reconnect, and since when we've been cut off. */
+  private kickedAt = 0;
+  private offlineSince = 0;
+  /** Time spent running smoothly without a match update (a frozen tab or a slow first frame doesn't count). */
+  private staleMs = 0;
+  private lastSeenTurn = 0;
+  private lastNetFrame = 0;
+  private rebuiltAt = 0;
+  /** Set when an online match had to stop (server restarted, connection gone): shown on the result screen. */
+  interrupted: string | null = null;
   private suppressClick = false;
   private net: OnlineSession | null = null;
 
@@ -477,6 +487,13 @@ export class Duel {
   /** Simulate up to the tick the clock says, but never past what the server has confirmed. */
   private stepOnline(dt: number): number {
     const net = this.net!, lock = this.lock!, m = this.match;
+    if (net.lost && !m.ended) {
+      // the match can't continue: end it here as a no-contest rather than wait forever
+      this.interrupted = net.lost;
+      m.ended = true; m.winner = -1;
+      m.events.push({ t: 'end', side: -1 });
+      return 0;
+    }
     if (this.autopilot && net.clockTick() >= 0 && !m.ended) {
       // the test autopilot keeps wall-clock pace even when frames are slow (the match itself runs on the shared clock)
       const t = performance.now();
@@ -485,7 +502,9 @@ export class Duel {
     }
     const r = net.result;
     // the referee says it is over but we have not got there (only possible after a divergence): end it here
-    if (r && !m.ended && lock.tick >= r.tick + 30) { m.ended = true; m.winner = r.winner; m.events.push({ t: 'end', side: r.winner }); }
+    // the referee says it is over but we have not got there: after a divergence, or because we were away and
+    // can't replay to the end (no inputs past what we were sent) — end it here with the referee's result
+    if (r && !m.ended && (lock.tick >= r.tick + 30 || net.upto + 1 < r.tick)) { m.ended = true; m.winner = r.winner; m.events.push({ t: 'end', side: r.winner }); }
     if (m.ended) return 0;
     const target = Math.min(net.clockTick() + 1, net.upto + 1);
     const behind = target - lock.tick;
@@ -508,15 +527,55 @@ export class Duel {
     return Math.min(n, 3) * DT;
   }
 
+  /**
+   * The server (the referee) says our copy of the match no longer matches its own. Rebuild it from the
+   * server's command log, which is the whole truth of a lockstep match, and carry on from the same tick.
+   */
+  private rebuild() {
+    const net = this.net!, info = net.info, old = this.lock!;
+    if (!info) return;
+    const m = new PvpMatch(info.setups[0], info.setups[1], info.seed);
+    const lock = new Lockstep(m, (t) => net.cmds.get(t));
+    while (lock.tick < old.tick && !m.ended) { lock.step(); m.events.length = 0; m.sim.events.length = 0; }
+    this.match = m; this.lock = lock;
+    for (const g of this.grabs.values()) this.host.view.drags.delete(g.tower.id);
+    this.grabs.clear();
+    this.host.view.mergeTargets.clear();
+    this.host.setSim(m.sim);
+    this.host.view.load(m.sim, THEMES[this.opts.theme] ?? THEMES[0]);
+    if (this.autopilot) this.enableAutopilot(this.autopilot.skill);
+    this.cache = {};
+    console.warn(`online: resynced the match at tick ${lock.tick}`);
+  }
+
   private updateNet() {
-    const net = this.net!, m = this.match;
+    const net = this.net!;
+    if (net.desync && !this.match.ended && performance.now() - this.rebuiltAt > 15000) {
+      this.rebuiltAt = performance.now();
+      net.desync = false;
+      this.rebuild();
+    }
+    const m = this.match;
     // the shared start countdown
     const left = net.countdown();
     const count = left > 0 ? String(Math.ceil(left)) : left > -0.9 && !m.ended ? 'GO!' : '';
     this.set('pv-count', count, (el) => { el.hidden = !count; el.textContent = count; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); });
     // connection problems, ours or theirs
+    // watchdog: connected but no match updates for a while → reconnect (which also resumes our seat)
+    const now = performance.now();
+    const live = !m.ended && left < 0;
+    const frameGap = this.lastNetFrame ? now - this.lastNetFrame : 0;
+    this.lastNetFrame = now;
+    if (net.lastTurnAt !== this.lastSeenTurn || !live || net.status !== 'online') { this.lastSeenTurn = net.lastTurnAt; this.staleMs = 0; }
+    else this.staleMs += Math.min(frameGap, 250);
+    const stalled = this.staleMs > 5000;
+    if (stalled && now - this.kickedAt > 10000) { this.kickedAt = now; this.staleMs = 0; net.kick(); }
+    // cut off for too long (the server's grace period is 30 s): stop instead of hanging
+    if (live && net.status !== 'online') { this.offlineSince ||= now; if (now - this.offlineSince > 40000) net.markLost('Lost the connection to the game server. Check your internet and start a new match.'); }
+    else this.offlineSince = 0;
     let msg = '';
     if (net.status !== 'online') msg = 'Connection lost · reconnecting…';
+    else if (stalled) msg = 'Reconnecting to the match…';
     else if (!net.peerOnline[this.foe] && !m.ended) {
       const s = Math.max(0, Math.ceil((net.peerGraceUntil - Date.now()) / 1000));
       msg = `${m.sides[this.foe].name} disconnected · ${s}s to come back`;

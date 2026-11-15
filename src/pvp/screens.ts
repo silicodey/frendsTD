@@ -394,11 +394,21 @@ export class PvpScreens {
 
   private finishedOnline(match: PvpMatch, opts: DuelOptions) {
     const me = opts.online!.side, foe = 1 - me, ui = this.host.ui;
+    const lost = this.net?.lost;
+    if (lost) {
+      ui.openModal(`<div class="sheet result" data-noclose>
+        <div class="eyebrow">Friend duel · vs ${esc(match.sides[foe].name)}</div><h2>Match interrupted</h2>
+        <p class="dim center">${esc(lost)}</p><p class="dim small center">No result was recorded.</p>
+        <div class="btn-col"><button class="btn primary big wide" data-act="pv-on-leave">${ICON.globe}<span>Back to friend duels</span></button></div></div>`);
+      this.host.renderNow();
+      return;
+    }
     const won = match.winner === me, draw = match.winner === -1;
     if (won) this.host.audio.win(); else if (!draw) this.host.audio.lose();
     const rival = match.sides[foe].name;
     const r = this.net?.result;
-    const why = r?.reason === 'forfeit' ? (won ? `${rival} conceded.` : 'You conceded.') : '';
+    const why = r?.reason === 'timeout' ? (won ? `${rival} lost the connection for more than 30 seconds.` : 'You were disconnected for more than 30 seconds, so the match counted as a loss.')
+      : r?.reason === 'forfeit' ? (won ? `${rival} conceded.` : 'You conceded.') : '';
     ui.openModal(`<div class="sheet result ${won || draw ? 'won' : 'lost'}" data-noclose>
       <div class="eyebrow">Friend duel · vs ${esc(rival)}</div><h2>${draw ? 'Draw' : won ? 'Victory' : 'Defeat'}</h2>
       ${why ? `<p class="dim center">${esc(why)}</p>` : ''}
