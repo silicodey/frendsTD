@@ -55,6 +55,10 @@ export interface EnemyDef {
   id: string;
   name: string;
   desc: string;
+  /** Duel-only monsters with board-disrupting abilities (handled by the duel engine). */
+  duel?: boolean;
+  /** Colour multiplier on the shared model (duel monsters reuse campaign models). */
+  tint?: [number, number, number];
   hp: number;
   speed: number;
   armor: number;

@@ -233,7 +233,9 @@ export function enemyModel(id: string): EnemyModel {
   let m = cache.get(id);
   if (m) return m;
   const b = new Builder();
-  const fn = builders[id] ?? builders.bug;
+  // duel monsters reuse campaign models (tinted)
+  const alias: Record<string, string> = { courier: 'glitch', jammer: 'injector', leech: 'daemon', mutator: 'phantom' };
+  const fn = builders[alias[id] ?? id] ?? builders.bug;
   const anim = fn(b);
   const geo = b.build('base')!;
   m = { geo, anim, height: geo.boundingBox!.max.y };

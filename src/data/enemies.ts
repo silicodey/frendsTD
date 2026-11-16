@@ -18,6 +18,11 @@ export const ENEMIES: EnemyDef[] = [
   { id: 'titan', name: 'Deepfake Titan', desc: 'BOSS — massive shield, phases out, jams towers.', hp: 4200, speed: 0.45, armor: 4, shield: 1600, bounty: 300, leak: 10, size: 2.4, boss: true, phase: { on: 1.0, off: 5 }, jam: { range: 3.2, dur: 2.5, cd: 7 }, color: 0x9d7bff },
   { id: 'clip', name: 'Paperclip', desc: 'A tiny paperclip. It only wants more paperclips.', hp: 16, speed: 1.9, armor: 0, bounty: 1, leak: 1, size: 0.55, color: 0xdfe6f0 },
   { id: 'maximizer', name: 'Paperclip Maximizer', desc: 'FINAL BOSS — converts everything into paperclips. Including you.', hp: 8200, speed: 0.4, armor: 7, bounty: 500, leak: 20, size: 2.7, boss: true, spawn: { type: 'clip', n: 4, cd: 3.2 }, jam: { range: 3.4, dur: 2.5, cd: 8 }, color: 0xe8eef7 },
+  // duel-only monsters that disrupt boards (see src/pvp/match.ts)
+  { id: 'courier', name: 'Courier', desc: 'Fast and fragile. Kill it for a compute payload.', hp: 22, speed: 2.6, armor: 0, bounty: 4, leak: 1, size: 0.8, color: 0xffd84d, duel: true, tint: [1.7, 1.45, 0.45] },
+  { id: 'jammer', name: 'Jammer', desc: 'Halfway down the lane it jams your nearest unit for 2s.', hp: 50, speed: 1.1, armor: 0, bounty: 6, leak: 1, size: 1, color: 0xff6ad5, duel: true, tint: [1.6, 0.6, 1.4] },
+  { id: 'leech', name: 'Leech', desc: 'Drains 1 compute per second while it lives. Kill it fast.', hp: 90, speed: 0.9, armor: 1, bounty: 8, leak: 1, size: 1.05, color: 0x8bff6a, duel: true, tint: [0.6, 1.6, 0.6] },
+  { id: 'mutator', name: 'Mutator', desc: 'When it dies, one of your units becomes a random unit of the same rank. Could be better…', hp: 70, speed: 1.0, armor: 0, bounty: 8, leak: 1, size: 1, color: 0xd9a0ff, duel: true, tint: [1.3, 0.85, 1.7] },
 ];
 
 export const ENEMY_BY_ID: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));

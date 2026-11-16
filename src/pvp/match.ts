@@ -42,13 +42,13 @@ const LEVEL: LevelDef = {
 
 /** Base damage per second a rank-1 unit is normalised to, before rarity, level and talents. */
 const BASE_DPS = 11;
-const KILL_COMPUTE: Record<string, number> = { bug: 8, glitch: 7, trojan: 18, spam: 3, worm: 6, wormling: 2, hydraling: 30, clip: 2, hydra: 120, titan: 150, maximizer: 180 };
+const KILL_COMPUTE: Record<string, number> = { bug: 8, glitch: 7, trojan: 18, spam: 3, worm: 6, wormling: 2, hydraling: 30, clip: 2, hydra: 120, titan: 150, maximizer: 180, courier: 4, jammer: 9, leech: 10, mutator: 9 };
 const BOSSES = ['hydra', 'titan', 'maximizer'];
 /**
  * Boss tuning (calibrated with tools/bosses.ts against casual and strong play). Same values on every
  * device and the server, so changing them needs a protocol bump.
  */
-export const BOSS_TUNE = { hpBase: 0.2, hpGrowth: 1.24, armor: 0.4, drainEvery: 8, enemyArmor: 0.7 };
+export const BOSS_TUNE = { hpBase: 0.2, hpGrowth: 1.24, armor: 0.4, drainEvery: 8, enemyArmor: 0.7, disruptions: true };
 const BOSS_HP = (wave: number) => BOSS_TUNE.hpBase * pow(BOSS_TUNE.hpGrowth, wave - 4);
 
 export interface DeckCard { id: string; level: number; talents: number[] }
@@ -72,7 +72,13 @@ export interface SideState {
   kills: number; leaks: number; refund: number; computeEarned: number; merges: number; maxRank: number;
 }
 
-export interface MatchEvent { t: 'summon' | 'merge' | 'power' | 'heart' | 'wave' | 'boss' | 'bossCast' | 'ability' | 'end'; side: number; x?: number; z?: number; n?: number; text?: string; tower?: Tower; kind?: string }
+export interface MatchEvent { t: 'summon' | 'merge' | 'power' | 'heart' | 'wave' | 'boss' | 'bossCast' | 'ability' | 'end' | 'warn' | 'blocked' | 'monster' | 'payload' | 'shield'; side: number; x?: number; z?: number; n?: number; text?: string; tower?: Tower; kind?: string }
+
+/** Things monsters and bosses do to a board. Each is shown 1 s ahead and can be blocked (see `blocks`). */
+export type DisruptKind = 'jam' | 'drain' | 'swap' | 'mutate' | 'clip';
+/** How long a target is warned before a disruption lands, and how long Ward takes to recharge a Shield. */
+export const WARN_S = 1, WARD_EVERY = 12, WARD_EVERY_POWER5 = 16;
+interface PendingDisrupt { at: number; side: number; kind: DisruptKind; ids: number[]; dur: number; text: string }
 
 const isArea = (d: TowerDef) => d.kind === 'nova' || d.kind === 'aura' || d.kind === 'support';
 
@@ -138,11 +144,16 @@ export class PvpMatch {
   rng: () => number;
   private spawnQ: { t: number; type: string; hp: number }[] = [];
   private bossT = [0, 0];
+  private pending: PendingDisrupt[] = [];
+  private wardT = new Map<number, number>();
+  /** Which duel-monster types each side has seen (each is introduced once with a callout). */
+  private seenMonsters = [new Set<string>(), new Set<string>()];
 
   constructor(a: PlayerSetup, b: PlayerSetup, seed = 1) {
     this.rng = mulberry32(seed * 7919 + 13);
     const sim = (this.sim = new Sim({ ...LEVEL, seed }));
     sim.sided = true;
+    sim.onJam = (t, _e, dur) => (!BOSS_TUNE.disruptions ? 0 : this.blocks(t, 'jam') ? 0 : this.sides[t.side].deck[t.ext.deck]?.flags.has('hardened') ? dur * 0.5 : dur);
     sim.demo = true;
     sim.tokens = 0;
     sim.statFn = (t) => this.stats(t);
@@ -255,7 +266,14 @@ export class PvpMatch {
     const hp = pow(1.17, w - 1) * (w > 14 ? pow(1.3, w - 14) : 1);
     const t0 = this.time;
     for (let i = 0; i < n; i++) {
-      const type = w >= 3 && i % 6 === 5 ? 'trojan' : w >= 2 && i % 4 === 3 ? 'glitch' : 'bug';
+      let type = w >= 3 && i % 6 === 5 ? 'trojan' : w >= 2 && i % 4 === 3 ? 'glitch' : 'bug';
+      // disrupting monsters join the later waves (they replace plain bugs)
+      if (type === 'bug') {
+        if (w >= 5 && i === 2) type = 'courier';
+        else if (w >= 6 && i % 7 === 6) type = 'jammer';
+        else if (w >= 8 && i === Math.floor(n / 2)) type = 'leech';
+        else if (w >= 10 && w % 2 === 0 && i === n - 3) type = 'mutator';
+      }
       this.spawnQ.push({ t: t0 + (i * 15) / n, type, hp });
     }
     if (w % 4 === 0) {
@@ -284,6 +302,7 @@ export class PvpMatch {
     }
     this.tickAbilities(dt);
     this.tickBosses(dt);
+    this.tickDisruptions(dt);
     const before = this.sim.events.length;
     this.sim.step(dt);
     this.handleSimEvents(before);
@@ -330,6 +349,15 @@ export class PvpMatch {
           const m = e as Enemy & { markBy?: number; markV?: number };
           const src2 = this.sim.towers.find((t) => t.id === m.markBy);
           if (src2 && s.deck[src2.ext.deck]?.flags.has('contagion')) for (const o of this.laneEnemies(e.pathIdx)) if (hypot(o.x - e.x, o.z - e.z) < 1.4) this.mark(o, src2, m.markV ?? 0.12, 4);
+        }
+        // duel monsters
+        if (e.def.id === 'courier') {
+          const payload = Math.round(20 * (1 + 0.25 * Math.max(0, this.wave - 1)));
+          gain += payload;
+          this.events.push({ t: 'payload', side: e.pathIdx, x: e.x, z: e.z, n: payload, text: `Payload +${payload}` });
+        } else if (e.def.id === 'mutator') {
+          const us = this.units(e.pathIdx);
+          if (us.length) this.schedule(e.pathIdx, 'mutate', [us[Math.floor(this.rng() * us.length)].id], 0, 'Mutate: a unit changes');
         }
         ev.n = gain;
         s.compute += gain; s.computeEarned += gain; s.kills++;
@@ -533,39 +561,145 @@ export class PvpMatch {
   }
 
   // ------------------------------------------------------------------ bosses
+  // ------------------------------------------------------------------ bosses, disruptions and shields
+  /** Bosses cast on their own lane's board: telegraphed, cooldown-limited, never more than 2 units at once. */
   private tickBosses(dt: number) {
     for (let side = 0; side < 2; side++) {
-      const boss = this.sim.enemies.find((e) => e.alive && e.def.boss && e.pathIdx === side);
+      const boss = this.sim.enemies.find((e) => e.alive && e.def.boss && e.pathIdx === side) as (Enemy & { ab2?: number; regrown?: boolean }) | undefined;
       if (!boss) { this.bossT[side] = 5; continue; }
+      if (boss.stunT > 0) continue; // a stunned boss doesn't cast
+      // second abilities
+      boss.ab2 = (boss.ab2 ?? 7) - dt;
+      if (boss.def.id === 'hydra' && !boss.regrown && boss.hp < boss.maxHp * 0.5) {
+        boss.regrown = true;
+        for (let k = 0; k < 2; k++) {
+          const h = this.sim.spawnEnemy('hydraling', side, boss.hpMult * 0.5, Math.max(0, boss.dist - 0.3 - k * 0.3));
+          h.spd = LANE_SPEED; h.bounty = this.killReward('hydraling');
+        }
+        this.events.push({ t: 'bossCast', side, kind: 'regrow', text: 'Regrow: two heads join the fight', x: boss.x, z: boss.z });
+      }
+      if (boss.ab2 <= 0) {
+        boss.ab2 = 14;
+        if (boss.def.id === 'titan' && boss.maxShield > 0) {
+          boss.shield = Math.min(boss.maxShield, boss.shield + boss.maxShield * 0.5);
+          this.events.push({ t: 'bossCast', side, kind: 'mirror', text: 'Mirror Shield: the Titan shields up', x: boss.x, z: boss.z });
+        } else if (boss.def.id === 'maximizer') {
+          const us = this.units(side);
+          if (us.length) this.schedule(side, 'clip', [us[Math.floor(this.rng() * us.length)].id], 6, 'Clip: a unit turns into a paperclip');
+        }
+      }
+      // main ability
       this.bossT[side] -= dt;
-      if (this.bossT[side] > 0 || boss.stunT > 0) continue;
+      if (this.bossT[side] > 0) continue;
       this.bossT[side] = BOSS_TUNE.drainEvery;
       const units = this.units(side);
       if (!units.length) continue;
-      const pick = () => units[Math.floor(this.rng() * units.length)];
-      if (boss.def.id === 'hydra' && units.length >= 2) {
-        // Fork: two random units swap places
-        const a = pick(); let b = pick(); let guard = 0;
-        while (b === a && guard++ < 8) b = pick();
-        if (a !== b) {
-          [a.c, b.c] = [b.c, a.c]; [a.r, b.r] = [b.r, a.r]; [a.x, b.x] = [b.x, a.x]; [a.z, b.z] = [b.z, a.z];
-          for (const t of [a, b]) for (const d of t.drones) { d.x = t.x; d.z = t.z; }
-          this.sim.recomputeBuffs();
-          this.events.push({ t: 'bossCast', side, kind: 'swap', text: 'Fork: units swapped', x: a.x, z: a.z });
-        }
-      } else if (boss.def.id === 'titan') {
-        // Deepfake: a random unit loses a rank
+      if (boss.def.id === 'hydra' && units.length >= 2) this.schedule(side, 'swap', pickN(units, 2, this.rng).map((u) => u.id), 0, 'Fork: units swapped');
+      else if (boss.def.id === 'titan') {
         const ranked = units.filter((u) => u.rank > 1);
-        if (ranked.length) {
-          const u = ranked[Math.floor(this.rng() * ranked.length)];
-          u.rank--; this.sim.recomputeBuffs();
-          this.events.push({ t: 'bossCast', side, kind: 'drain', text: 'Deepfake: rank stolen', x: u.x, z: u.z, tower: u });
+        if (ranked.length) this.schedule(side, 'drain', [ranked[Math.floor(this.rng() * ranked.length)].id], 0, 'Deepfake: rank stolen');
+      } else if (boss.def.id === 'maximizer') this.schedule(side, 'jam', pickN(units, 2, this.rng).map((u) => u.id), 3, 'Encrypt: units jammed');
+    }
+  }
+
+  /** Warn the targets now, act in WARN_S seconds. */
+  private schedule(side: number, kind: DisruptKind, ids: number[], dur: number, text: string) {
+    if (!BOSS_TUNE.disruptions) return; // calibration only: measure a board's loss to disruptions
+    this.pending.push({ at: this.time + WARN_S, side, kind, ids: ids.slice(0, 2), dur, text });
+    for (const id of ids) { const t = this.sim.towers.find((x) => x.id === id); if (t) this.events.push({ t: 'warn', side, tower: t, kind, x: t.x, z: t.z }); }
+  }
+
+  private adjacent(a: Tower, b: Tower) { return a !== b && a.side === b.side && hypot(a.x - b.x, a.z - b.z) < 1.6; }
+
+  /** Does something stop this disruption? Uses up a Shield charge, Firewall or Sanctuary for the wave. */
+  blocks(t: Tower, kind: DisruptKind): boolean {
+    const s = this.sides[t.side], fl = s.deck[t.ext.deck]?.flags ?? new Set<string>();
+    const block = (why: string) => { this.events.push({ t: 'blocked', side: t.side, tower: t, text: why, x: t.x, z: t.z }); return true; };
+    if (kind === 'drain' && fl.has('anchored')) return block('Anchored');
+    if ((kind === 'mutate' || kind === 'clip') && fl.has('stable')) return block('Stable');
+    if ((t.ext.shield ?? 0) > 0) { t.ext.shield!--; return block('Shield'); }
+    if (kind === 'mutate') return false; // a gamble the player may welcome: only Stable or a Shield stops it
+    if (fl.has('firewall') && t.ext.fwWave !== this.wave) { t.ext.fwWave = this.wave; return block('Firewall'); }
+    if (t.ext.sanctWave !== this.wave && this.units(t.side).some((u) => this.adjacent(u, t) && s.deck[u.ext.deck]?.flags.has('wardAura'))) {
+      t.ext.sanctWave = this.wave;
+      return block('Sanctuary');
+    }
+    return false;
+  }
+
+  /** Telegraphed disruptions landing, monster abilities, and Ward recharging shields. */
+  private tickDisruptions(dt: number) {
+    // land what was telegraphed
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const d = this.pending[i];
+      if (this.time < d.at) continue;
+      this.pending.splice(i, 1);
+      const ts = d.ids.map((id) => this.sim.towers.find((x) => x.id === id && x.side === d.side)).filter((x): x is Tower => !!x);
+      if (!ts.length) continue;
+      if (d.kind === 'swap') {
+        if (ts.length < 2 || ts.some((t) => this.blocks(t, 'swap'))) continue;
+        const [a, b] = ts;
+        [a.c, b.c] = [b.c, a.c]; [a.r, b.r] = [b.r, a.r]; [a.x, b.x] = [b.x, a.x]; [a.z, b.z] = [b.z, a.z];
+        for (const t of [a, b]) for (const dr of t.drones) { dr.x = t.x; dr.z = t.z; }
+        this.sim.recomputeBuffs();
+        this.events.push({ t: 'bossCast', side: d.side, kind: 'swap', text: d.text, x: a.x, z: a.z });
+        continue;
+      }
+      for (const t of ts) {
+        if (this.blocks(t, d.kind)) continue;
+        if (d.kind === 'jam' || d.kind === 'clip') {
+          const hard = this.sides[t.side].deck[t.ext.deck]?.flags.has('hardened');
+          t.jamT = Math.max(t.jamT, d.dur * (hard ? 0.5 : 1)); t.targets.length = 0;
+          if (d.kind === 'clip') t.ext.clipT = t.jamT;
+          this.sim.events.push({ t: 'jam', tower: t, x: t.x, z: t.z, x2: t.x, y2: 1, z2: t.z });
+        } else if (d.kind === 'drain') {
+          if (t.rank <= 1) continue;
+          t.rank--; this.sim.recomputeBuffs();
+        } else if (d.kind === 'mutate') {
+          const s = this.sides[t.side];
+          const deck = Math.floor(this.rng() * s.deck.length);
+          const { c, r, rank } = t;
+          this.sim.removeTower(t);
+          const n = this.put(t.side, deck, rank, c, r, true);
+          this.sim.recomputeBuffs();
+          this.events.push({ t: 'bossCast', side: d.side, kind: 'mutate', text: `Mutate: became ${s.deck[deck].base.name}`, x: n.x, z: n.z, tower: n });
+          continue;
         }
-      } else if (boss.def.id === 'maximizer') {
-        // Encrypt: two random units are jammed
-        const set = pickN(units, 2, this.rng);
-        for (const u of set) { u.jamT = Math.max(u.jamT, 3); u.targets.length = 0; this.sim.events.push({ t: 'jam', tower: u, enemy: boss, x: u.x, z: u.z, x2: boss.x, y2: boss.y, z2: boss.z }); }
-        this.events.push({ t: 'bossCast', side, kind: 'encrypt', text: 'Encrypt: units jammed', x: set[0].x, z: set[0].z });
+        this.events.push({ t: 'bossCast', side: d.side, kind: d.kind, text: d.text, x: t.x, z: t.z, tower: t });
+      }
+    }
+    // monsters
+    for (const e0 of this.sim.enemies) {
+      if (!e0.alive || !e0.def.duel) continue;
+      const e = e0 as Enemy & { used?: boolean; told?: boolean };
+      const side = e.pathIdx;
+      if (!e.told) {
+        e.told = true;
+        if (!this.seenMonsters[side].has(e.def.id)) { this.seenMonsters[side].add(e.def.id); this.events.push({ t: 'monster', side, kind: e.def.id, text: `${e.def.name}: ${e.def.desc}` }); }
+      }
+      if (e.def.id === 'jammer' && !e.used && e.dist >= e.path.length * 0.5) {
+        e.used = true;
+        let best: Tower | null = null, bd = 99;
+        for (const t of this.units(side)) { const dd = hypot(t.x - e.x, t.z - e.z); if (dd < bd) { bd = dd; best = t; } }
+        if (best) this.schedule(side, 'jam', [best.id], 2, 'Static: unit jammed');
+      } else if (e.def.id === 'leech') {
+        const s = this.sides[side];
+        s.compute = Math.max(0, s.compute - dt);
+      }
+    }
+    // Ward: supports hand adjacent units a Shield charge (a maxed-out support does too, more slowly)
+    for (const t of this.sim.towers) {
+      const s = this.sides[t.side], spec = s.deck[t.ext.deck];
+      if (!spec) continue;
+      const ward = spec.flags.has('ward') ? WARD_EVERY : dutyOf(spec.base) === 'support' && s.power[t.ext.deck] >= MAX_POWER ? WARD_EVERY_POWER5 : 0;
+      if (!ward) continue;
+      const left = (this.wardT.get(t.id) ?? ward) - dt;
+      if (left > 0) { this.wardT.set(t.id, left); continue; }
+      this.wardT.set(t.id, ward);
+      for (const u of this.units(t.side)) {
+        if (!this.adjacent(t, u) || (u.ext.shield ?? 0) >= 1) continue;
+        u.ext.shield = 1;
+        this.events.push({ t: 'shield', side: t.side, tower: u, x: u.x, z: u.z });
       }
     }
   }

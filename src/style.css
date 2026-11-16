@@ -609,3 +609,4 @@ svg { display: block; }
 .mat.sig svg { color: var(--fc); }
 .mat b { font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums; }
 .mat i { font: 500 10px/1.2 var(--display); font-style: normal; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.float-text.blocked { color: #a8f6ff; font-size: 13px; letter-spacing: 0.14em; text-shadow: 0 0 10px rgba(95, 242, 255, 0.8), 0 1px 0 #000; }

@@ -438,10 +438,20 @@ export class Duel {
         if (mine) { this.host.ui.say(ev.text ?? 'Boss ability'); a.jam(); }
         if (ev.x !== undefined) fx.ring(ev.x, 0.05, ev.z!, 0xff3d6a, 0.2, 1.6, 0.5, 0.12, 0.3);
         if (ev.kind === 'drain' && ev.tower) fx.text(ev.tower.x, 1.5, ev.tower.z, 'RANK −1', 'dmg');
+        if (ev.kind === 'clip' && ev.tower) fx.text(ev.tower.x, 1.5, ev.tower.z, 'PAPERCLIPPED', 'jam');
+        if (ev.kind === 'mutate' && ev.tower) fx.text(ev.tower.x, 1.5, ev.tower.z, 'MUTATED', 'ability');
         break;
       case 'ability':
         if (ev.tower) fx.text(ev.tower.x, 1.55, ev.tower.z, (ev.text ?? '').toUpperCase(), 'ability');
         break;
+      case 'warn': if (ev.tower) this.host.view.warnings.set(ev.tower.id, this.match.sim.time + 1); break;
+      case 'blocked':
+        if (ev.tower) { fx.text(ev.tower.x, 1.45, ev.tower.z, 'BLOCKED', 'blocked'); fx.ring(ev.tower.x, 0.05, ev.tower.z, 0x5ff2ff, 0.2, 0.9, 0.35, 0.12, 0.2); }
+        if (mine) a.upgrade();
+        break;
+      case 'shield': if (ev.tower && mine) fx.ring(ev.tower.x, 0.05, ev.tower.z, 0x5ff2ff, 0.6, 0.2, 0.3, 0.1, 0); break;
+      case 'payload': if (ev.x !== undefined && mine) fx.text(ev.x, 1.2, ev.z!, ev.text ?? '', 'gold'); break;
+      case 'monster': if (mine) this.host.ui.say(ev.text ?? ''); break;
       case 'end': this.endT = 1.6; break;
       default: break;
     }

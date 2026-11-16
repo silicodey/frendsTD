@@ -22,6 +22,26 @@ export const TOWER_SCALE = 1.22, ENEMY_SCALE = 1.2;
 /** Duels pack 15 units per player into a small board: smaller units keep every cell and its rank badge readable. */
 const DUEL_TOWER_SCALE = 0.86, DUEL_ENEMY_SCALE = 0.62;
 
+/** Small round glyphs for duel units: a shield charge and a disruption warning. */
+const glyphCache = new Map<string, THREE.CanvasTexture>();
+function glyphTex(kind: 'shield' | 'warn'): THREE.CanvasTexture {
+  let t = glyphCache.get(kind);
+  if (t) return t;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d')!;
+  g.beginPath(); g.arc(64, 64, 54, 0, Math.PI * 2);
+  g.fillStyle = kind === 'warn' ? 'rgba(60, 6, 14, 0.92)' : 'rgba(4, 22, 34, 0.9)'; g.fill();
+  g.lineWidth = 9; g.strokeStyle = kind === 'warn' ? '#ff4d6a' : '#5ff2ff'; g.stroke();
+  g.fillStyle = kind === 'warn' ? '#ffd0d8' : '#c8fbff';
+  if (kind === 'warn') { g.font = '900 84px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', 64, 70); }
+  else { g.beginPath(); g.moveTo(64, 28); g.lineTo(96, 40); g.lineTo(92, 72); g.quadraticCurveTo(84, 94, 64, 104); g.quadraticCurveTo(44, 94, 36, 72); g.lineTo(32, 40); g.closePath(); g.fill(); }
+  t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  glyphCache.set(kind, t);
+  return t;
+}
+
 /** Rank badges for duel units: a dark disc with a big number, coloured by rank tier. Cached per rank. */
 const badgeTex = new Map<number, THREE.CanvasTexture>();
 export const RANK_COLORS = ['#9fe8ff', '#9fe8ff', '#7cf0b4', '#7cf0b4', '#d27bff', '#ffd166', '#ff8a5c'];
@@ -173,6 +193,10 @@ export class GameView {
   /** Duels: which lane is the viewer's (online player 2 plays the top lane, seen from the other end). */
   mySide = 0;
   private badges = new Map<number, THREE.Sprite>();
+  /** Duels: units about to be hit by a disruption (until sim time), and their shield badges. */
+  warnings = new Map<number, number>();
+  private warnSprites = new Map<number, THREE.Sprite>();
+  private shieldSprites = new Map<number, THREE.Sprite>();
   /** Duels: damage dealt per enemy, gathered for a moment and shown as one number (white, or orange for crits). */
   private dmgAcc = new Map<number, { e: Enemy; n: number; c: number; t: number }>();
   root = new THREE.Group();
@@ -326,6 +350,7 @@ export class GameView {
     // pre-create enemy batches for every type that can appear (avoids hitches mid-wave)
     const types = new Set<string>();
     for (const w of sim.waves) for (const g of w.groups) types.add(g.type);
+    if (sim.sided) for (const t of ['bug', 'glitch', 'trojan', 'courier', 'jammer', 'leech', 'mutator', 'hydra', 'titan', 'maximizer', 'clip']) types.add(t);
     let grew = true;
     while (grew) {
       grew = false;
@@ -363,8 +388,11 @@ export class GameView {
     for (const v of this.towers.values()) { this.root.remove(v.group); v.dispose(); }
     this.towers.clear();
     this.dmgAcc.clear();
-    for (const b of this.badges.values()) { this.root.remove(b); b.material.dispose(); }
-    this.badges.clear();
+    for (const map of [this.badges, this.shieldSprites, this.warnSprites]) {
+      for (const b of map.values()) { this.root.remove(b); b.material.dispose(); }
+      map.clear();
+    }
+    this.warnings.clear();
     for (const b of this.batches.values()) { this.root.remove(b.mesh); b.mesh.geometry.dispose(); (b.mesh.material as THREE.Material).dispose(); }
     this.batches.clear();
     for (const a of this.auras.values()) { this.root.remove(a); (a.material as THREE.Material).dispose(); }
@@ -703,8 +731,10 @@ export class GameView {
     for (const [id, v] of this.towers) {
       if (seen.has(id)) continue;
       this.root.remove(v.group); v.dispose(); this.towers.delete(id);
-      const bd = this.badges.get(id);
-      if (bd) { this.root.remove(bd); bd.material.dispose(); this.badges.delete(id); }
+      for (const map of [this.badges, this.shieldSprites, this.warnSprites]) {
+        const bd = map.get(id);
+        if (bd) { this.root.remove(bd); bd.material.dispose(); map.delete(id); }
+      }
       const a = this.auras.get(id);
       if (a) { this.root.remove(a); (a.material as THREE.Material).dispose(); this.auras.delete(id); }
       if (this.selected && this.selected.id === id) this.select(null);
@@ -795,6 +825,27 @@ export class GameView {
     const f = Math.cos(this.engine.azimuth) >= 0 ? 1 : -1;
     b.position.set(at.x - 0.3 * f, at.y + 0.16, at.z + 0.3 * f);
     b.scale.setScalar(0.36 * Math.min(1, pop));
+    // a Shield charge: small cyan badge at the other near corner
+    const sh = (t.ext.shield ?? 0) > 0;
+    let s = this.shieldSprites.get(t.id);
+    if (sh && !s) {
+      s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyphTex('shield'), depthTest: false, depthWrite: false, transparent: true, toneMapped: false, color: 0xcfefff }));
+      s.renderOrder = 31; this.root.add(s); this.shieldSprites.set(t.id, s);
+    }
+    if (s) { s.visible = sh; s.position.set(at.x + 0.3 * f, at.y + 0.16, at.z + 0.3 * f); s.scale.setScalar(0.32); }
+    // a warning: something is about to hit this unit
+    const until = this.warnings.get(t.id) ?? 0;
+    const warn = this.sim.time < until;
+    let w = this.warnSprites.get(t.id);
+    if (warn && !w) {
+      w = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyphTex('warn'), depthTest: false, depthWrite: false, transparent: true, toneMapped: false }));
+      w.renderOrder = 32; this.root.add(w); this.warnSprites.set(t.id, w);
+    }
+    if (w) {
+      w.visible = warn;
+      if (warn) { const k = 0.42 + 0.08 * Math.sin(this.engine.time * 18); w.position.set(at.x, at.y + 1.25, at.z); w.scale.setScalar(k); }
+      else this.warnings.delete(t.id);
+    }
   }
 
   private syncEnemies(dt: number, time: number) {
@@ -825,7 +876,7 @@ export class GameView {
       const yaw = an.spin ? time * an.spin + ph * 6.28 : Math.atan2(e.dx, e.dz);
       const roll = an.rock ? Math.sin(time * 9 + ph * 6.28) * an.rock * moving : 0;
       const flash = Math.max(0, 1 - (sim.time - e.hitT) / 0.1) * (e.def.size > 1.5 ? 0.14 : 0.36);
-      let r = 1, g = 1, bl = 1;
+      let r = e.def.tint?.[0] ?? 1, g = e.def.tint?.[1] ?? 1, bl = e.def.tint?.[2] ?? 1;
       if (e.stunT > 0) { r = 1.35; g = 1.3; bl = 0.55; }
       else if (e.slowT > 0) { r = 0.6; g = 0.85; bl = 1.5; }
       else if (e.dotT > 0) { r = 1.5; g = 0.8; bl = 0.55; }

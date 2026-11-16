@@ -349,6 +349,8 @@ export class Sim {
     return out;
   }
 
+  /** Duels: a jam is about to land on a tower; return the duration it actually gets (0 = blocked). */
+  onJam: ((t: Tower, e: Enemy, dur: number) => number) | null = null;
   /** Display only (damage numbers): told about every bit of damage dealt. Never feeds back into the game. */
   onDamage: ((e: Enemy, dealt: number, src: Tower | null, crit: boolean) => void) | null = null;
   private critNow = false;
@@ -612,9 +614,13 @@ export class Sim {
             if (d < bd) { bd = d; best = t; }
           }
           if (best) {
-            best.jamT = def.jam.dur; best.targets.length = 0;
+            // duels decide whether a jam lands (shields, resilience); 0 means it was blocked
+            const dur = this.onJam ? this.onJam(best, e, def.jam.dur) : def.jam.dur;
             e.jamT = def.jam.cd;
-            this.events.push({ t: 'jam', tower: best, enemy: e, x: best.x, z: best.z, x2: e.x, y2: e.y, z2: e.z });
+            if (dur > 0) {
+              best.jamT = dur; best.targets.length = 0;
+              this.events.push({ t: 'jam', tower: best, enemy: e, x: best.x, z: best.z, x2: e.x, y2: e.y, z2: e.z });
+            }
           } else e.jamT = 0.5;
         }
       }
