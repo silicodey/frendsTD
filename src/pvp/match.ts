@@ -7,6 +7,7 @@ import { RARITY_INFO, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, abilityPower, type Signature, type UnitMods } from './signatures';
 import { specialityMods } from './specialities';
 import { CAL } from './calibration';
+import type { WeeklyPerk } from './perks';
 import { pickN } from '../net/protocol';
 import { hypot, pow } from '../sim/dmath';
 
@@ -83,7 +84,7 @@ interface PendingDisrupt { at: number; side: number; kind: DisruptKind; ids: num
 const isArea = (d: TowerDef) => d.kind === 'nova' || d.kind === 'aura' || d.kind === 'support';
 
 /** Build the battle version of a unit from its card: normalised damage, battle range, talents. */
-export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: number; critDmg?: number } = {}): UnitSpec {
+export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: number; critDmg?: number; perk?: WeeklyPerk | null } = {}): UnitSpec {
   const base = TOWER_BY_ID[card.id];
   const rarity = rarityOf(base);
   const sig = SIGNATURE_BY_ID[card.id];
@@ -128,6 +129,12 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
     d.rate = d.rate * 0.65;
     if (d.slow) d.slow = [d.slow[0] * 0.5, d.slow[1]];
   }
+  // this week's class perk
+  const pe = opts.perk && opts.perk.family === base.family ? opts.perk.effect : null;
+  if (pe?.kind === 'dmg' && d.dmg > 0) d.dmg *= 1 + pe.amount;
+  if (pe?.kind === 'rate') d.rate *= 1 + pe.amount;
+  if (pe?.kind === 'critDmg' && d.crit) d.crit = [d.crit[0], d.crit[1] * (1 + pe.amount)];
+  if (pe?.kind === 'supportAura' && d.buff && base.dmg <= 0) for (const k of ['dmg', 'rate', 'crit', 'range'] as const) if (d.buff[k]) d.buff[k] = d.buff[k]! * (1 + pe.amount);
   d.noAir = false; // there are no flyers in duels
   const start = RARITY_INFO[rarity].startLevel;
   return { card, base, def: d, mods, flags, sig, ap: abilityPower(card.level, start) * (1 + (mods.abilityPower ?? 0)), levelMult: pow(LEVEL_GROWTH, card.level - 1) };
@@ -149,7 +156,11 @@ export class PvpMatch {
   /** Which duel-monster types each side has seen (each is introduced once with a callout). */
   private seenMonsters = [new Set<string>(), new Set<string>()];
 
-  constructor(a: PlayerSetup, b: PlayerSetup, seed = 1) {
+  /** This week's class perk (null = none). Part of the match rules: both players and the server use the same one. */
+  readonly perk: WeeklyPerk | null;
+
+  constructor(a: PlayerSetup, b: PlayerSetup, seed = 1, perk: WeeklyPerk | null = null) {
+    this.perk = perk;
     this.rng = mulberry32(seed * 7919 + 13);
     const sim = (this.sim = new Sim({ ...LEVEL, seed }));
     sim.sided = true;
@@ -164,7 +175,7 @@ export class PvpMatch {
       else if (sim.grid[i] === CELL_FREE || sim.grid[i] === CELL_BLOCKED) sim.grid[i] = slot ? CELL_FREE : CELL_BLOCKED;
     }
     this.sides = [a, b].map((p) => ({
-      name: p.name, elo: p.elo ?? 0, deck: p.deck.map((c) => buildSpec(c, { critDmg: p.critDmg })), power: p.deck.map(() => 1), compute: START_COMPUTE, summons: 0, hearts: HEARTS,
+      name: p.name, elo: p.elo ?? 0, deck: p.deck.map((c) => buildSpec(c, { critDmg: p.critDmg, perk })), power: p.deck.map(() => 1), compute: START_COMPUTE, summons: 0, hearts: HEARTS,
       kills: 0, leaks: 0, refund: 0, computeEarned: 0, merges: 0, maxRank: 1,
     }));
   }
@@ -177,7 +188,14 @@ export class PvpMatch {
   units(side: number) { return this.sim.towers.filter((t) => t.side === side); }
   freeSlots(side: number) { return this.slots(side).filter(([c, r]) => !this.sim.towerAt(c, r)); }
   summonCost(side: number) { const s = this.sides[side]; return Math.max(0, Math.round((SUMMON_BASE + SUMMON_STEP * s.summons) * (1 - s.refund))); }
-  powerCost(side: number, i: number) { const p = this.sides[side].power[i]; return p >= MAX_POWER ? Infinity : POWER_COSTS[p - 1]; }
+  powerCost(side: number, i: number) {
+    const s = this.sides[side], p = s.power[i];
+    if (p >= MAX_POWER) return Infinity;
+    const pe = this.perkFor(s.deck[i]?.base.family);
+    return pe?.kind === 'powerDiscount' ? Math.round(POWER_COSTS[p - 1] * (1 - pe.amount)) : POWER_COSTS[p - 1];
+  }
+  /** The perk's effect if it applies to this class. */
+  private perkFor(family: string | undefined) { return this.perk && this.perk.family === family ? this.perk.effect : null; }
   canMerge(a: Tower, b: Tower) { return a !== b && a.side === b.side && a.ext.deck === b.ext.deck && a.rank === b.rank && a.rank < MAX_RANK && !this.ended; }
   sideOfCell(r: number) { return SIDE_ROWS[0].includes(r) ? 0 : SIDE_ROWS[1].includes(r) ? 1 : -1; }
   waveTime() { return this.time < FIRST_WAVE_AT ? FIRST_WAVE_AT - this.time : WAVE_LEN - ((this.time - FIRST_WAVE_AT) % WAVE_LEN); }
@@ -204,6 +222,7 @@ export class PvpMatch {
       for (let i = 0; i < Math.floor((rank - 1) / 2); i++) t.drones.push({ x: t.x, z: t.z, ang: i * 1.3, cd: i * 0.1, target: null });
     }
     if (spec.flags.has('hotfix')) t.mode = 'strong';
+    if (this.perkFor(spec.base.family)?.kind === 'shieldStart') t.ext.shield = 1;
     this.sides[side].maxRank = Math.max(this.sides[side].maxRank, rank);
     if (!silent) this.sim.events.push({ t: 'build', tower: t, x: t.x, z: t.z });
     return t;
@@ -219,8 +238,11 @@ export class PvpMatch {
     s.refund = 0;
     const [c, r] = free[Math.floor(this.rng() * free.length)];
     const deck = Math.floor(this.rng() * s.deck.length);
-    const t = this.put(side, deck, 1, c, r);
+    const pe = this.perkFor(s.deck[deck].base.family);
+    const rank = pe?.kind === 'startRank' && this.rng() < pe.chance ? 2 : 1;
+    const t = this.put(side, deck, rank, c, r);
     this.events.push({ t: 'summon', side, x: t.x, z: t.z, n: cost, tower: t });
+    if (rank === 2) this.events.push({ t: 'ability', side, tower: t, text: 'Strong arrival' });
     return t;
   }
 
@@ -242,6 +264,17 @@ export class PvpMatch {
     this.sim.events.push({ t: 'upgrade', tower: t, x: t.x, z: t.z });
     this.events.push({ t: 'merge', side, x: t.x, z: t.z, n: rank, tower: t, text: agentic ? 'Agentic Merge' : undefined });
     if (agentic) this.ability(t, 'Agentic Merge');
+    // this week's perk: merging the featured class may summon a bonus unit
+    const pe = this.perkFor(a.def.family);
+    if (pe?.kind === 'mergeSpawn') {
+      const roll = this.rng(), free = this.freeSlots(side);
+      const bonus = roll < pe.r2 ? 2 : roll < pe.r2 + pe.r1 ? 1 : 0;
+      if (bonus && free.length) {
+        const [fc, fr] = free[Math.floor(this.rng() * free.length)];
+        const b = this.put(side, Math.floor(this.rng() * s.deck.length), bonus, fc, fr);
+        this.events.push({ t: 'ability', side, tower: b, text: bonus === 2 ? 'Bonus rank 2!' : 'Bonus unit' });
+      }
+    }
     this.sim.recomputeBuffs();
     return t;
   }

@@ -13,6 +13,7 @@ import { RARITY_INFO, rarityOf } from './roster';
 import { dutyOf, subroleOf, traits } from '../data/towers';
 import { SIGNATURE_BY_ID } from './signatures';
 import { chosenSpecialities } from './specialities';
+import { cleanPerk, perkText, type WeeklyPerk } from './perks';
 import type { OnlineSession } from '../net/client';
 import { DT, HASH_EVERY, Lockstep, TICK_MS, applyCmd, matchHash, type Cmd } from '../net/protocol';
 
@@ -27,6 +28,8 @@ export interface DuelOptions {
   seed: number;
   /** First duel: coach the player through summon, merge and power-up. */
   tutorial?: boolean;
+  /** This week's class perk (offline modes; online, the server's choice comes with the match). */
+  perk?: WeeklyPerk | null;
   /** Online: the server connection and which side of the board is ours (1 = the top lane, shown at the bottom). */
   online?: { session: OnlineSession; side: number };
 }
@@ -84,9 +87,9 @@ export class Duel {
     if (on) {
       const info = on.session.info!;
       this.net = on.session;
-      this.match = new PvpMatch(info.setups[0], info.setups[1], info.seed);
+      this.match = new PvpMatch(info.setups[0], info.setups[1], info.seed, cleanPerk(info.perk));
       this.lock = new Lockstep(this.match, (t) => on.session.cmds.get(t));
-    } else this.match = new PvpMatch(opts.me, opts.rival, opts.seed);
+    } else this.match = new PvpMatch(opts.me, opts.rival, opts.seed, opts.perk ?? null);
     if (opts.mode === 'ranked' || opts.mode === 'practice') this.bot = new PvpBot(this.match, 1, opts.rivalSkill, opts.seed);
     host.setSim(this.match.sim);
     host.view.mySide = this.me;
@@ -101,6 +104,8 @@ export class Duel {
     this.bindInput();
     this.layout();
     if (!on) this.banner('Duel', opts.mode === 'local' ? 'Local · first to lose 3 hearts loses' : `vs ${opts.rival.name}`);
+    const perk = this.match.perk;
+    if (perk) setTimeout(() => { if (!this.match.ended) host.ui.say(`This week · ${FAMILY_INFO[perk.family].name}: ${perkText(perk).title}`); }, on ? 6200 : 2600);
     if (opts.tutorial) this.tip = 1;
   }
 
@@ -292,6 +297,7 @@ export class Duel {
       <div class="chips">${traits(d).filter((x) => x !== 'Global range').slice(0, 7).map((x) => `<span class="chip">${esc(x)}</span>`).join('')}</div>
       ${sig ? `<div class="ability"><div class="ab-h"><span class="eyebrow">Special capability</span><b>${esc(sig.ability.name)}</b></div><p>${esc(sig.ability.text(spec.ap))}</p></div>` : ''}
       ${picks.length ? `<div class="chips">${picks.map((t) => `<span class="chip" title="${esc(t.desc)}">★ ${esc(t.name)}</span>`).join('')}</div>` : ''}
+      ${m.perk && m.perk.family === def.family ? `<p class="perk-line">${ICON.bolt} This week: ${esc(perkText(m.perk).desc)}</p>` : ''}
       <p class="dim small">${esc(powerLine)} Merge two of the same rank into a random unit one rank higher.</p>
       <button class="btn primary wide" data-act="duel-resume">${ICON.play}<span>${offline ? 'Back to the match' : 'Close'}</span></button>
     </div>`);
@@ -547,7 +553,7 @@ export class Duel {
   private rebuild() {
     const net = this.net!, info = net.info, old = this.lock!;
     if (!info) return;
-    const m = new PvpMatch(info.setups[0], info.setups[1], info.seed);
+    const m = new PvpMatch(info.setups[0], info.setups[1], info.seed, cleanPerk(info.perk));
     const lock = new Lockstep(m, (t) => net.cmds.get(t));
     while (lock.tick < old.tick && !m.ended) { lock.step(); m.events.length = 0; m.sim.events.length = 0; }
     this.match = m; this.lock = lock;

@@ -2,6 +2,7 @@ import { MAX_CARD_LEVEL, startLevel } from '../pvp/economy';
 import type { DeckCard, PlayerSetup, PvpMatch } from '../pvp/match';
 import { PVP_IDS } from '../pvp/roster';
 import { TALENT_LEVELS } from '../pvp/signatures';
+import type { WeeklyPerk } from '../pvp/perks';
 import { hasSpecialities } from '../pvp/specialities';
 
 /**
@@ -42,7 +43,8 @@ export type Cmd =
 export interface TimedCmd { tick: number; side: number; c: Cmd; n: number }
 
 export interface LobbyPlayer { name: string; ready: boolean; connected: boolean; deck: DeckCard[] }
-export interface StartInfo { startAt: number; seed: number; theme: number; setups: [PlayerSetup, PlayerSetup] }
+/** `perk`: the week's class perk the server chose for this match (both players use exactly this one). */
+export interface StartInfo { startAt: number; seed: number; theme: number; setups: [PlayerSetup, PlayerSetup]; perk?: WeeklyPerk | null }
 
 /** Server → client messages. */
 export type ServerMsg =

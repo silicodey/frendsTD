@@ -51,6 +51,23 @@ export function defaultServer(): string {
   return '';
 }
 
+/** Load the weekly perk schedule: the cached copy now, then a fresh one from the server's /config. */
+export function loadRemoteConfig(apply: (perks: unknown) => void) {
+  const KEY = 'frendstd.config';
+  const cached = store.get(KEY, local());
+  if (cached) { try { apply(JSON.parse(cached).perks); } catch { /* ignore */ } }
+  const server = defaultServer();
+  if (!server || typeof fetch === 'undefined') return;
+  const url = server.replace(/^ws/i, 'http').replace(/\/ws$/, '/config');
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const t = setTimeout(() => ctrl?.abort(), 8000);
+  fetch(url, { signal: ctrl?.signal, cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j && typeof j === 'object') { apply((j as { perks?: unknown }).perks); store.set(KEY, JSON.stringify(j), local()); } })
+    .catch(() => undefined)
+    .finally(() => clearTimeout(t));
+}
+
 /** This tab was in an online room before a reload (so it should try to rejoin). */
 export const pendingResume = () => !!store.get(RESUME_KEY, session());
 

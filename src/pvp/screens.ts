@@ -19,7 +19,8 @@ import {
 import { PVP_UNITS, RARITY_INFO, isSignature, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, TALENT_LEVELS } from './signatures';
 import { SPECIALITIES } from './specialities';
-import { OnlineSession, defaultServer, inviteLink, normalizeServer, pendingResume, saveServer, type NetEvent } from '../net/client';
+import { OnlineSession, defaultServer, inviteLink, loadRemoteConfig, normalizeServer, pendingResume, saveServer, type NetEvent } from '../net/client';
+import { currentPerk, perkEndsIn, perkText, setPerkOverrides } from './perks';
 import { cleanCode, cleanName } from '../net/protocol';
 
 export interface ScreensHost {
@@ -83,6 +84,7 @@ export class PvpScreens {
 
   constructor(private host: ScreensHost) {
     host.ui.extra = (act, arg, el) => this.onClick(act, arg, el);
+    loadRemoteConfig((perks) => setPerkOverrides(perks));
     // text fields on the online screens keep their value across re-renders
     const menu = host.ui.menu;
     menu.addEventListener('input', (e) => {
@@ -173,6 +175,7 @@ export class PvpScreens {
           <div class="meter big"><i style="width:${Math.round(Math.min(1, Math.max(0.02, prog)) * 100)}%"></i></div>
           <div class="arena-next">${next ? `<span>${next.elo - p.elo} Elo to <b>${next.name}</b></span><span class="unl">${next.unlocks.slice(0, 4).map((id) => `<img src="${this.thumb(id, 128)}" alt="${esc(TOWER_BY_ID[id].name)}" title="Unlocks ${esc(TOWER_BY_ID[id].name)}">`).join('')}</span>` : '<span>Top arena reached</span>'}</div>
         </section>
+        ${this.perkBanner()}
         <h3 class="sec">Your deck <button class="link" data-act="pv-collection">Edit</button></h3>
         <div class="deck5">${deck.map((c) => this.unitTile(c.id, false)).join('')}</div>
         <div class="btn-col">
@@ -208,6 +211,17 @@ export class PvpScreens {
       </div>`);
   }
 
+  /** "This week" card: the featured class and its perk, with a countdown to the next one. */
+  private perkBanner() {
+    const now = Date.now(), perk = currentPerk(now), fam = FAMILY_INFO[perk.family], t = perkText(perk);
+    const left = perkEndsIn(now), d = Math.floor(left / 86400), h = Math.floor((left % 86400) / 3600);
+    return `<section class="perk-card" style="--fc:${fam.css}">
+      <div class="perk-top"><span class="eyebrow">This week · ${esc(fam.name)}</span><span class="perk-left">${d ? `${d}d ` : ''}${h}h left</span></div>
+      <b>${esc(t.title)}</b><p>${esc(t.desc)}</p>
+      <p class="dim small">${esc(fam.name)} Sigils from matches are doubled this week.</p>
+    </section>`;
+  }
+
   private upgradableCount() { return Object.keys(this.p.cards).filter((id) => canUpgrade(this.p, id) === 'ok').length; }
 
   private unitTile(id: string, showWeights: boolean, extra = '') {
@@ -223,8 +237,10 @@ export class PvpScreens {
     const cost = upgradeCost(id, c.level);
     const ok = canUpgrade(p, id) === 'ok';
     const w = cost ? Math.min(1, c.weights / cost.weights) : 1;
-    return `<button class="utile ${ok ? 'can' : ''} ${extra}" data-act="pv-unit" data-arg="${id}" style="--rc:${r.css};--fc:${fam.css}">
+    const featured = currentPerk(Date.now()).family === def.family;
+    return `<button class="utile ${ok ? 'can' : ''} ${featured ? 'featured' : ''} ${extra}" data-act="pv-unit" data-arg="${id}" style="--rc:${r.css};--fc:${fam.css}">
       <img src="${this.thumb(id)}" alt="">
+      ${featured ? `<span class="u-feat" title="Featured class this week">${ICON.bolt}</span>` : ''}
       ${isSignature(id) ? `<span class="u-sig" title="Signature unit">★</span>` : ''}
       <span class="u-role ${dutyOf(def)}" title="${dutyOf(def) === 'support' ? 'Support' : 'Damage'} · ${subroleOf(def)}">${dutyOf(def) === 'support' ? ICON.shield : ICON.swords}</span>
       <span class="u-lvl">Lv ${c.level}</span>
@@ -362,7 +378,7 @@ export class PvpScreens {
     const opts: DuelOptions = {
       mode, me: { name: mode === 'local' ? 'Player 1' : 'You', deck, elo: p.elo, critDmg: critDamageOf(p) },
       rival: { name: rival.name, deck: rival.deck, elo: rival.elo, critDmg: mode === 'local' ? critDamageOf(p) : rival.critDmg },
-      rivalSkill: rival.skill, theme: arena.theme, seed, tutorial: mode !== 'local' && p.matches === 0 && !p.coached,
+      rivalSkill: rival.skill, theme: arena.theme, seed, tutorial: mode !== 'local' && p.matches === 0 && !p.coached, perk: currentPerk(now),
     };
     if (opts.tutorial) { p.coached = true; this.save(); }
     this.matchmaking(opts, () => this.host.startDuel(opts));
@@ -403,7 +419,7 @@ export class PvpScreens {
         <button class="btn wide" data-act="pv-leave">${ICON.back}<span>Done</span></button></div></div>`);
       return;
     }
-    const res = settleMatch(p, score, opts.rival.elo ?? p.elo, mulberry32(opts.seed ^ 0x9e3779b9), now);
+    const res = settleMatch(p, score, opts.rival.elo ?? p.elo, mulberry32(opts.seed ^ 0x9e3779b9), now, opts.perk?.family ?? null);
     this.save();
     this.lastResult = res;
     const arena = arenaOf(p);

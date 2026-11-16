@@ -19,6 +19,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PvpMatch, type DeckCard } from '../src/pvp/match';
 import { THEMES } from '../src/data/levels';
+import { currentPerk, setPerkOverrides } from '../src/pvp/perks';
 import {
   COUNTDOWN_MS, HASH_EVERY, INPUT_DELAY, Lockstep, PROTO, RECONNECT_GRACE_MS, TICK_MS,
   cleanCmd, cleanCode, cleanCrit, cleanDeck, cleanName, matchHash, randomCode,
@@ -72,12 +73,21 @@ const now = () => performance.timeOrigin + performance.now();
 export function startServer(opts: ServerOptions = {}) {
   const log = (...a: unknown[]) => { if (!opts.quiet) console.log(new Date().toISOString(), ...a); };
   const rooms = new Map<string, Room>();
+  // weekly perks can be changed without an app update: PERKS_JSON='{"2026-11-30":{"family":"grok","effect":{"kind":"dmg","amount":0.06}}}'
+  let perkConfig: unknown = {};
+  try { perkConfig = JSON.parse(process.env.PERKS_JSON ?? '{}'); } catch { log('PERKS_JSON is not valid JSON; using the built-in schedule'); }
+  setPerkOverrides(perkConfig);
   const GRACE = opts.graceMs ?? RECONNECT_GRACE_MS;
   const staticDir = opts.staticDir === null ? null : path.resolve(opts.staticDir ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist'));
 
   // ---------------------------------------------------------------- static files (the game itself)
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
+    if (url.pathname === '/config') {
+      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'max-age=300' });
+      res.end(JSON.stringify({ proto: PROTO, perks: perkConfig, perk: currentPerk(Date.now()) }));
+      return;
+    }
     if (url.pathname === '/health') {
       res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ ok: true, proto: PROTO, rooms: rooms.size }));
@@ -144,12 +154,13 @@ export function startServer(opts: ServerOptions = {}) {
     const info: StartInfo = {
       startAt: Math.round(now() + (opts.countdownMs ?? COUNTDOWN_MS)), seed: randomInt(1, 0x7fffffff), theme: randomInt(THEMES.length),
       setups: [{ name: a.name, deck: a.deck, elo: 0, critDmg: a.critDmg }, { name: b.name, deck: b.deck, elo: 0, critDmg: b.critDmg }],
+      perk: currentPerk(Date.now()),
     };
     r.state = 'countdown'; r.info = info;
     r.cmds = new Map(); r.log = []; r.pending = []; r.upto = -1; r.hashes = new Map();
     for (const s of r.seats as Seat[]) { s.forfeited = false; s.timedOut = false; s.holdUntil = 0; }
     r.lastEnd = null;
-    r.lock = new Lockstep(new PvpMatch(info.setups[0], info.setups[1], info.seed), (t) => r.cmds.get(t));
+    r.lock = new Lockstep(new PvpMatch(info.setups[0], info.setups[1], info.seed, info.perk ?? null), (t) => r.cmds.get(t));
     broadcast(r, { t: 'start', info });
     lobby(r);
     r.countdownTimer = setTimeout(() => { if (r.state === 'countdown') { r.state = 'playing'; r.countdownTimer = null; lobby(r); } }, Math.max(0, info.startAt - now()));

@@ -610,3 +610,13 @@ svg { display: block; }
 .mat b { font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums; }
 .mat i { font: 500 10px/1.2 var(--display); font-style: normal; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .float-text.blocked { color: #a8f6ff; font-size: 13px; letter-spacing: 0.14em; text-shadow: 0 0 10px rgba(95, 242, 255, 0.8), 0 1px 0 #000; }
+/* weekly class perk */
+.perk-card { margin-top: 10px; padding: 12px 14px; border-radius: 16px; display: flex; flex-direction: column; gap: 4px; background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--fc) 26%, transparent), transparent 60%), rgba(10, 16, 28, 0.9); border: 1px solid color-mix(in srgb, var(--fc) 50%, transparent); }
+.perk-card .eyebrow { color: var(--fc); }
+.perk-top { display: flex; justify-content: space-between; align-items: center; }
+.perk-left { font: 600 11px/1 var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
+.perk-card b { font: 700 17px/1.2 var(--display); }
+.perk-card p { margin: 0; font: 500 13px/1.35 var(--display); }
+.utile.featured { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fc) 70%, transparent), 0 0 14px color-mix(in srgb, var(--fc) 35%, transparent); }
+.utile .u-feat { position: absolute; left: 4px; bottom: 26px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: rgba(5, 8, 14, 0.85); color: var(--fc); font-size: 12px; }
+.perk-line { margin: 0; padding: 8px 10px; border-radius: 10px; background: rgba(255, 209, 102, 0.08); border: 1px solid rgba(255, 209, 102, 0.3); font: 500 12.5px/1.4 var(--display); color: #ffe7a8; }
