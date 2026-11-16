@@ -3,11 +3,13 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { Theme } from '../data/types';
 import { mulberry32 } from '../data/levels';
 import { CELL_BLOCKED, CELL_CORE, CELL_FREE, CELL_PORTAL, CELL_VOID, type Sim } from '../sim/sim';
-import { Builder, box, cone, cyl, ico, oct, rbox, sph, tor, type Mat } from './builder';
+import { Builder, box, cone, cyl, extrude, ico, oct, rbox, sph, tor, type Mat } from './builder';
 import { additive, makePbr } from './materials';
 import type { Engine } from './engine';
 
 const PI = Math.PI, P2 = PI / 2;
+/** Height the Core's crystal floats at (its rings orbit there too). */
+const CORE_CRYSTAL_Y = 0.58;
 const css = (c: number) => '#' + c.toString(16).padStart(6, '0');
 
 const NOISE = /* glsl */ `
@@ -437,40 +439,51 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
   private buildCore() {
     const { core } = this.sim;
     this.own(this.coreMat);
+    // Two-tier octagonal plinth flanked by four leaning pylons, a long floating crystal and two chrome orbit rings
+    // (after the Core concept sheet). Octagons are turned so flat faces point along the axes, where the pylons stand.
+    const Y0 = -0.14, OCT = PI / 8;
+    const metal: Mat = { c: 0x4a5262, m: 0.55, ro: 0.42 }, metal2: Mat = { c: 0x5a6374, m: 0.5, ro: 0.38 };
+    const pylon: Mat = { c: 0x9da3ad, m: 0.6, ro: 0.3 }, trim: Mat = { c: 0xd6e2f0, m: 1, ro: 0.12 };
+    const gl: Mat = { c: 0x4fe8ff, e: 1.2 }, glSoft: Mat = { c: 0x4fe8ff, e: 0.9 };
     const b = new Builder();
-    const metal: Mat = { c: 0x26303e, m: 0.9, ro: 0.28 }, trim: Mat = { c: 0xcfe0f5, m: 1, ro: 0.15 }, gl: Mat = { c: 0x5ff2ff, e: 1.4 };
-    b.add(cyl(0.44, 0.48, 0.12, 8), { ...metal, flat: true, p: [0, -0.08, 0] });
-    b.add(tor(0.42, 0.02, 6, 8), { ...gl, p: [0, -0.02, 0], r: [P2, 0, 0] });
-    b.ring(4, 0.34, () => box(0.07, 0.4, 0.1), { ...metal, p: [0, 0.16, 0], r: [0.35, 0, 0] });
-    b.ring(4, 0.27, () => box(0.03, 0.12, 0.03), { ...gl, p: [0, 0.38, 0] });
+    b.add(cyl(0.43, 0.45, 0.12, 8), { ...metal, flat: true, p: [0, Y0 + 0.06, 0], r: [0, OCT, 0] }); // lower tier
+    b.add(cyl(0.452, 0.452, 0.024, 8), { ...gl, p: [0, Y0 + 0.1, 0], r: [0, OCT, 0] }); // glowing band
+    b.add(cyl(0.38, 0.42, 0.1, 8), { ...metal2, flat: true, p: [0, Y0 + 0.17, 0], r: [0, OCT, 0] }); // upper tier
+    b.add(cyl(0.34, 0.38, 0.035, 8), { ...metal, flat: true, p: [0, Y0 + 0.2375, 0], r: [0, OCT, 0] }); // chamfered cap
+    const top = Y0 + 0.255;
+    b.add(cyl(0.2, 0.2, 0.01, 8), { c: 0x141a24, m: 0.6, ro: 0.4, p: [0, top + 0.004, 0], r: [0, OCT, 0] }); // recess
+    b.add(tor(0.2, 0.013, 4, 8), { ...glSoft, p: [0, top + 0.01, 0], r: [P2, 0, OCT] }); // octagon outline
+    // pylons: a faceted slab whose outer face leans outward, with a glowing slot (profile: x = outward, y = up)
+    const prof: [number, number][] = [[-0.055, 0], [0.065, 0], [0.115, 0.36], [0.09, 0.5], [0.03, 0.47], [-0.03, 0.13]];
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * PI * 2;
+      b.xf([Math.sin(a) * 0.43, Y0, Math.cos(a) * 0.43], [0, a, 0]); // local +Z points outward
+      b.add(extrude(prof, 0.13, 0.014), { ...pylon, flat: true, r: [0, -P2, 0] });
+      b.add(box(0.028, 0.24, 0.014), { ...gl, p: [0, 0.2, 0.11], r: [0.138, 0, 0] });
+      b.add(box(0.13, 0.03, 0.12), { ...metal, flat: true, p: [0, 0.015, 0.0] }); // foot
+    }
+    b.xf();
     const baseMesh = new THREE.Mesh(this.own(b.build('base')!), this.coreMat);
     baseMesh.castShadow = true;
     this.core.add(baseMesh);
+    // the crystal: a long hexagonal bipyramid with a brighter inner shard
     const c2 = new Builder();
-    c2.add(ico(0.24, 0), { c: 0xbff8ff, e: 1.6, flat: true, s: [1, 1.35, 1] });
-    c2.add(ico(0.3, 1), { c: 0x5ff2ff, e: 0.6, m: 0.3, ro: 0.05, flat: true, s: [0.6, 0.6, 0.6], p: [0, 0, 0] });
+    c2.add(cyl(0.11, 0.11, 0.22, 6), { c: 0x5fe0f4, e: 0.75, m: 0.2, ro: 0.08, flat: true });
+    c2.add(cone(0.11, 0.24, 6), { c: 0x8ff4ff, e: 0.95, m: 0.2, ro: 0.08, flat: true, p: [0, 0.23, 0] });
+    c2.add(cone(0.11, 0.19, 6), { c: 0x46cfe8, e: 0.65, m: 0.2, ro: 0.08, flat: true, p: [0, -0.205, 0], r: [PI, 0, 0] });
+    c2.add(box(0.03, 0.3, 0.13), { c: 0xdcffff, e: 1.4, flat: true, p: [0, 0.02, 0.045], r: [0, PI / 6, 0] }); // highlight facet
     this.coreCrystal = new THREE.Mesh(this.own(c2.build('base')!), this.coreMat);
-    this.coreCrystal.position.y = 0.72;
+    this.coreCrystal.position.y = CORE_CRYSTAL_Y;
     this.core.add(this.coreCrystal);
     for (let i = 0; i < 2; i++) {
       const r = new Builder();
-      r.add(tor(0.4 + i * 0.09, 0.022, 6, 40), { ...trim });
-      r.ring(3, 0.4 + i * 0.09, () => oct(0.04), { ...gl, flat: true, r: [P2, 0, 0] });
+      r.add(tor(0.25 + i * 0.05, 0.011, 6, 48), { ...trim });
       const m = new THREE.Mesh(this.own(r.build('base')!), this.coreMat);
-      m.position.y = 0.72; m.castShadow = true;
+      m.position.y = CORE_CRYSTAL_Y; m.castShadow = true;
       this.coreRings.push(m); this.core.add(m);
     }
-    const beam = new THREE.Mesh(this.own(new THREE.CylinderGeometry(0.1, 0.34, 7, 16, 1, true)), this.own(additive({
-      side: THREE.DoubleSide,
-      uniforms: { uColor: { value: new THREE.Color(0x5ff2ff) } },
-      vertexShader: 'varying vec2 vUv; varying vec3 vN; void main(){ vUv = uv; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; void main(){ float f = pow(clamp(abs(normalize(vN).z), 0.0, 1.0), 1.5); gl_FragColor = vec4(uColor * f * pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.2) * 0.55, 1.0); }',
-    })));
-    beam.position.y = 4.1;
-    beam.visible = false; // the tall light shaft read as glare on a phone
-    this.core.add(beam);
-    this.coreLight = new THREE.PointLight(0x5ff2ff, 1.6, 5, 1.5);
-    this.coreLight.position.y = 0.9;
+    this.coreLight = new THREE.PointLight(0x5ff2ff, 1.0, 4, 1.8);
+    this.coreLight.position.y = 1.1;
     this.core.add(this.coreLight);
     this.core.position.set(core.x, 0, core.z);
     this.group.add(this.core);
@@ -652,14 +665,14 @@ uv.set([0, p.cum[i], 1, p.cum[i]], i * 4);
     this.moteMat.uniforms.uScale.value = this.engine.pointScale();
     for (const m of this.portalMats) m.uniforms.uTime.value = time;
     this.coreCrystal.rotation.y = time * 0.9;
-    this.coreCrystal.position.y = 0.72 + Math.sin(time * 1.7) * 0.05;
+    this.coreCrystal.position.y = CORE_CRYSTAL_Y + Math.sin(time * 1.7) * 0.03;
     this.coreRings[0].rotation.set(time * 0.8, time * 0.5, 0);
     this.coreRings[1].rotation.set(P2 + time * 0.4, 0, time * 0.9);
-    for (const g of this.extraCores) { g.children[1].rotation.y = -time * 0.9; g.children[2].rotation.set(time * 0.8, time * 0.5, 0); }
+    for (const g of this.extraCores) { g.children[1].rotation.y = -time * 0.9; g.children[2].rotation.set(time * 0.8, time * 0.5, 0); g.children[3].rotation.set(P2 + time * 0.4, 0, time * 0.9); }
     this.coreFlash = Math.max(0, this.coreFlash - dt * 2.5);
     this.coreMat.u.uFx.value.x = this.coreFlash * 1.5;
     this.coreMat.u.uGlow.value = 1 + Math.sin(time * 2.4) * 0.15;
-    this.coreLight.intensity = 1.6 + Math.sin(time * 2.4) * 0.2 + this.coreFlash * 8;
+    this.coreLight.intensity = 1.0 + Math.sin(time * 2.4) * 0.12 + this.coreFlash * 8;
     this.coreLight.color.setHex(this.coreFlash > 0.05 ? 0xff5566 : 0x5ff2ff);
     if (this.drift) this.drift.rotation.y = time * 0.004;
     if (this.driftMat) this.driftMat.uniforms.uTime.value = time;
