@@ -28,6 +28,7 @@ test('server config can override a week; junk is rejected', () => {
   setPerkOverrides({});
   assert.equal(cleanPerk({ family: 'gemini', effect: { kind: 'dmg', amount: 9 } })!.effect.kind === 'dmg' && (cleanPerk({ family: 'gemini', effect: { kind: 'dmg', amount: 9 } })!.effect as { amount: number }).amount, 0.5, 'amounts are capped');
   assert.equal(cleanPerk({ family: 'gemini', effect: { kind: 'explode' } }), null);
+  assert.equal(cleanPerk({ family: 'Tokyo', effect: { kind: 'shieldStart' } })!.family, 'grok', 'display names work too');
 });
 
 const card = (id: string, level = 6): DeckCard => ({ id, level, talents: [-1, -1, -1] });

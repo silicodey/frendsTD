@@ -78,6 +78,8 @@ export interface MatchEvent { t: 'summon' | 'merge' | 'power' | 'heart' | 'wave'
 /** Things monsters and bosses do to a board. Each is shown 1 s ahead and can be blocked (see `blocks`). */
 export type DisruptKind = 'jam' | 'drain' | 'swap' | 'mutate' | 'clip';
 /** How long a target is warned before a disruption lands, and how long Ward takes to recharge a Shield. */
+/** How strong slow-field auras are in duels, relative to the campaign. */
+export const DUEL_AURA_SLOW = 0.6;
 export const WARN_S = 1, WARD_EVERY = 12, WARD_EVERY_POWER5 = 16;
 interface PendingDisrupt { at: number; side: number; kind: DisruptKind; ids: number[]; dur: number; text: string }
 
@@ -125,10 +127,12 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   }
   if (base.pull) {
     // the duel lane is short: gentler, slower pulls and a lighter slow
-    d.pull = base.pull * 0.2 * (1 + (mods.pull ?? 0));
+    d.pull = base.pull * 0.15 * (1 + (mods.pull ?? 0));
     d.rate = d.rate * 0.65;
     if (d.slow) d.slow = [d.slow[0] * 0.5, d.slow[1]];
   }
+  // slow fields stack across a whole merge board: lighter in duels (the field's damage is too small to tune with)
+  if (!base.pull && base.kind === 'aura' && d.slow) d.slow = [d.slow[0] * DUEL_AURA_SLOW, d.slow[1]];
   // this week's class perk
   const pe = opts.perk && opts.perk.family === base.family ? opts.perk.effect : null;
   if (pe?.kind === 'dmg' && d.dmg > 0) d.dmg *= 1 + pe.amount;

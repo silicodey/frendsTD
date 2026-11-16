@@ -10,11 +10,11 @@ import { PvpMatch, buildSpec, type DeckCard } from '../src/pvp/match';
 import { PVP_UNITS } from '../src/pvp/roster';
 import { PvpBot } from '../src/pvp/bot';
 
-const LEVEL = 9, RANK = 3, REF = 'cl_sonnet';
+const LEVEL = 6, RANK = 3, REF = 'cl_sonnet';
 const cal: Record<string, number> = Object.fromEntries(PVP_UNITS.map((t) => [t.id, 1]));
 
 function survive(id: string, c: number, support: boolean, seed: number): number {
-  const deck: DeckCard[] = [{ id, level: LEVEL, talents: [] }, { id: REF, level: LEVEL, talents: [] }];
+  const deck: DeckCard[] = [{ id, level: LEVEL, talents: [-1, -1, -1] }, { id: REF, level: LEVEL, talents: [-1, -1, -1] }];
   const m = new PvpMatch({ name: 'A', deck }, { name: 'B', deck }, seed);
   m.sides[0].deck = deck.map((d, i) => buildSpec(d, { noRarity: true, cal: i === 0 ? c : cal[REF] }));
   const slots = m.freeSlots(0);
@@ -61,8 +61,8 @@ function winRate(id: string, n: number): number {
   let w = 0;
   for (let s = 1; s <= n; s++) {
     const refs = REFS.filter((r) => r !== id).slice(0, 4);
-    const A: DeckCard[] = [id, ...refs].map((x) => ({ id: x, level: LEVEL, talents: [] }));
-    const B: DeckCard[] = REFS.map((x) => ({ id: x, level: LEVEL, talents: [] }));
+    const A: DeckCard[] = [id, ...refs].map((x) => ({ id: x, level: LEVEL, talents: [-1, -1, -1] }));
+    const B: DeckCard[] = REFS.map((x) => ({ id: x, level: LEVEL, talents: [-1, -1, -1] }));
     const m = new PvpMatch({ name: 'A', deck: A }, { name: 'B', deck: B }, s * 7 + 1);
     m.sides[0].deck = A.map((d) => buildSpec(d, { noRarity: true, cal: cal[d.id] }));
     m.sides[1].deck = B.map((d) => buildSpec(d, { noRarity: true, cal: cal[d.id] }));
@@ -101,8 +101,8 @@ if (!process.argv.includes('--static-only')) {
     let w = 0;
     for (let s = 101; s <= 160; s++) {
       const refs = REFS.slice(0, 4);
-      const A: DeckCard[] = [u.id, ...refs].map((x) => ({ id: x, level: LEVEL, talents: [] }));
-      const B: DeckCard[] = REFS.map((x) => ({ id: x, level: LEVEL, talents: [] }));
+      const A: DeckCard[] = [u.id, ...refs].map((x) => ({ id: x, level: LEVEL, talents: [-1, -1, -1] }));
+      const B: DeckCard[] = REFS.map((x) => ({ id: x, level: LEVEL, talents: [-1, -1, -1] }));
       const m = new PvpMatch({ name: 'A', deck: A }, { name: 'B', deck: B }, s);
       m.sides[0].deck = A.map((d) => buildSpec(d, { noRarity: true, cal: cal[d.id] }));
       m.sides[1].deck = B.map((d) => buildSpec(d, { noRarity: true, cal: cal[d.id] }));

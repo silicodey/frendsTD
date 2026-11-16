@@ -89,7 +89,9 @@ const num = (x: unknown, lo: number, hi: number) => (typeof x === 'number' && Nu
 export function cleanPerk(x: unknown): WeeklyPerk | null {
   if (!x || typeof x !== 'object') return null;
   const o = x as Record<string, unknown>;
-  const family = FAMS.find((f) => f === o.family);
+  // a class can be named by its internal key or its display name ("grok" or "Tokyo")
+  const fam = typeof o.family === 'string' ? o.family.toLowerCase() : '';
+  const family = FAMS.find((f) => f === fam || FAMILY_INFO[f].name.toLowerCase() === fam);
   const e = o.effect as Record<string, unknown> | undefined;
   if (!family || !e || typeof e !== 'object') return null;
   const id = typeof o.id === 'string' ? o.id.slice(0, 40) : '';

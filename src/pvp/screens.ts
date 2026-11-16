@@ -717,14 +717,15 @@ export class PvpScreens {
         if (!r) { a.deny(); break; }
         this.save(); a.upgrade();
         this.host.ui.say(`${TOWER_BY_ID[arg].name} reached level ${r.level} · +${r.usage} Usage${r.reached.length ? ` · Usage level ${r.reached[r.reached.length - 1]}!` : ''}`);
-        this.unit(arg);
+        // refresh the grid behind the sheet first: re-rendering a screen closes any open sheet
         if (this.host.ui.menu.dataset.view === 'pvp-coll') this.collection();
+        this.unit(arg);
         break;
       }
       case 'pv-talent': {
         const [id, tier, opt] = arg.split(':');
         const r = chooseTalent(p, id, Number(tier), Number(opt));
-        if (r === 'resets') { a.deny(); this.host.ui.say(`Changing a talent costs ${TALENT_RESPEC_RESETS} Reset.`); break; }
+        if (r === 'resets') { a.deny(); this.host.ui.say(`Changing a speciality costs ${TALENT_RESPEC_RESETS} Reset.`); break; }
         if (r !== 'ok') break;
         this.save(); a.click(); this.unit(id);
         break;
