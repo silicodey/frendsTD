@@ -13,7 +13,7 @@ import {
 import type { DeckCard, PvpMatch } from './match';
 import { CRIT_DMG_MAX, CRIT_DMG_START, LEVEL_GROWTH, buildSpec } from './match';
 import {
-  DECK_SIZE, arenaOf, buyOffer, critDamageOf, canUpgrade, chooseTalent, deckCards, limits, resetLimits, setDeckSlot, settleMatch, shopOffers, spendLimit, upgrade,
+  DECK_SIZE, arenaOf, buyOffer, critDamageOf, friendDuelReward, canUpgrade, chooseTalent, deckCards, limits, resetLimits, setDeckSlot, settleMatch, shopOffers, spendLimit, upgrade,
   type MatchResult,
 } from './profile';
 import { PVP_UNITS, RARITY_INFO, isSignature, rarityOf } from './roster';
@@ -335,27 +335,60 @@ export class PvpScreens {
   // ------------------------------------------------------------------ shop
   shop() {
     const p = this.p, now = Date.now();
-    const offers = shopOffers(p, now);
-    const left = 86400 - ((now / 1000) % 86400);
+    const perk = currentPerk(now), featured = perk.family, fam = FAMILY_INFO[featured];
+    const offers = shopOffers(p, now, featured);
+    const dayLeft = 86400 - ((now / 1000) % 86400), weekLeft = perkEndsIn(now);
+    const hm = (s: number) => (s >= 86400 ? `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`);
+    const icon = (o: (typeof offers)[number]) => {
+      if (o.id) return `<img src="${this.thumb(o.id)}" alt="">`;
+      if (o.checkpoint) return `<span class="o-ico" style="color:${CHECKPOINT_INFO[o.checkpoint].css}">${ICON.cards}</span>`;
+      if (o.mats?.sigils) return `<span class="o-ico" style="color:${fam.css}">${ICON.sigil}</span>`;
+      if (o.mats?.cores) return `<span class="o-ico">${ICON.ncore}</span>`;
+      if (o.mats?.shards) return `<span class="o-ico">${ICON.shard}</span>`;
+      return `<span class="o-ico">${o.key === 'limits' ? ICON.limit : ICON.token}</span>`;
+    };
+    const sub = (o: (typeof offers)[number]) => {
+      if (o.id) { const def = TOWER_BY_ID[o.id]; return `${o.label} · ${RARITY_INFO[rarityOf(def)].name}`; }
+      if (o.checkpoint) return 'Opens right away: cards, Tokens and materials';
+      if (o.mats?.sigils) return `${fam.name} Sigils · for its Breakthroughs at Lv 8 and 10`;
+      if (o.mats?.cores) return 'For Lv 10 (and Epic/Legendary Lv 8) Breakthroughs · once a week';
+      if (o.mats?.shards) return 'For every Breakthrough';
+      return o.key === 'limits' ? `Back to ${LIMIT_MAX}/${LIMIT_MAX} right now` : 'Straight to your wallet';
+    };
+    const row = (o: (typeof offers)[number]) => {
+      const def = o.id ? TOWER_BY_ID[o.id] : null, r = def ? RARITY_INFO[rarityOf(def)] : null;
+      const price = o.costTokens ? `${ICON.token}${fmt(o.costTokens)}` : `${ICON.reset}${o.costResets}`;
+      return `<div class="offer ${o.sold ? 'sold' : ''}" style="--rc:${r?.css ?? (o.checkpoint ? CHECKPOINT_INFO[o.checkpoint].css : '#ffcf5c')}">${icon(o)}
+        <div class="o-t"><b>${def ? esc(def.name) : esc(o.label)}</b><i>${esc(sub(o))}</i></div>
+        <button class="btn ${o.sold ? 'disabled' : 'primary'}" data-act="pv-buy" data-arg="${o.key}">${o.sold ? 'Bought' : price}</button></div>`;
+    };
+    const section = (k: string, title: string, note: string) => {
+      const list = offers.filter((o) => o.section === k);
+      return list.length ? `<h3 class="sec">${title}<span class="sec-note">${note}</span></h3><div class="offers">${list.map(row).join('')}</div>` : '';
+    };
     this.screen('pvp-shop', `
       <header class="bar"><button class="icon-btn" data-act="pv-home" aria-label="Back">${ICON.back}</button><h1>Shop</h1>${this.wallet()}</header>
       <div class="scroll">
-        <p class="dim">Daily deals refresh in ${Math.floor(left / 3600)}h ${Math.floor((left % 3600) / 60)}m.</p>
-        <div class="offers">${offers.map((o) => {
-          const def = o.id ? TOWER_BY_ID[o.id] : null;
-          const r = def ? RARITY_INFO[rarityOf(def)] : null;
-          const icon = def ? `<img src="${this.thumb(def.id)}" alt="">` : `<span class="o-ico">${o.key === 'limits' ? ICON.limit : ICON.token}</span>`;
-          const price = o.costTokens ? `${ICON.token}${fmt(o.costTokens)}` : `${ICON.reset}${o.costResets}`;
-          return `<div class="offer ${o.sold ? 'sold' : ''}" style="--rc:${r?.css ?? '#ffcf5c'}">${icon}
-            <div class="o-t"><b>${def ? esc(def.name) : esc(o.label)}</b><i>${def ? `${o.label} · ${r!.name}` : o.key === 'limits' ? `Back to ${LIMIT_MAX}/${LIMIT_MAX} right now` : 'Straight to your wallet'}</i></div>
-            <button class="btn ${o.sold ? 'disabled' : 'primary'}" data-act="pv-buy" data-arg="${o.key}">${o.sold ? 'Bought' : price}</button></div>`;
-        }).join('')}</div>
+        ${this.perkBanner()}
+        ${section('week', `This week · ${esc(fam.name)}`, `ends in ${hm(weekLeft)}`)}
+        ${section('daily', 'Daily deals', `refresh in ${hm(dayLeft)}`)}
+        ${section('materials', 'Materials', 'daily · Neural Core weekly')}
+        ${section('checkpoints', 'Checkpoints', 'daily · Epic weekly')}
+        ${section('wallet', 'Resets & Limits', '')}
+        <section class="mats shop-mats"><span class="eyebrow">You have</span><div class="mat-row">
+          <span class="mat">${ICON.shard}<b>${p.mats.shards}</b><i>Shards</i></span>
+          <span class="mat">${ICON.ncore}<b>${p.mats.cores}</b><i>Cores</i></span>
+          ${FAMILIES.map((f) => `<span class="mat sig" style="--fc:${FAMILY_INFO[f].css}">${ICON.sigil}<b>${p.mats.sigils[f]}</b><i>${esc(FAMILY_INFO[f].name)}</i></span>`).join('')}
+        </div></section>
         <section class="explain">
-          <h3>Currencies</h3>
-          <p>${ICON.token} <b>Tokens</b>: the main currency. Win battles and campaign stars to earn them; spend them on upgrades.</p>
-          <p>${ICON.weights} <b>Weights</b>: each unit's own cards. Collect them from Checkpoints to level that unit up.</p>
+          <h3>Currencies and materials</h3>
+          <p>${ICON.token} <b>Tokens</b>: the main currency. Battles, campaign stars and Checkpoints pay them; upgrades and the Shop spend them.</p>
+          <p>${ICON.weights} <b>Cards</b>: each unit's own cards. Commons need many, Legendaries only 3–5 per level.</p>
+          <p>${ICON.shard} <b>Data Shards</b>: needed for every Breakthrough (levels 6, 8, 10). Every match pays a few.</p>
+          <p>${ICON.sigil} <b>Class Sigils</b>: one kind per class, for that class's level 8 and 10 Breakthroughs. Play its units to earn them, doubled in its featured week.</p>
+          <p>${ICON.ncore} <b>Neural Cores</b>: rare. Level 10 Breakthroughs need them. Legendary Checkpoints, 10 wins in a week, arena promotions, or one a week here.</p>
           <p>${ICON.limit} <b>Limits</b>: every ranked battle uses one. One comes back every 8 minutes, up to ${LIMIT_MAX}.</p>
-          <p>${ICON.reset} <b>Resets</b>: reset your Limits instantly, change a talent, or buy Tokens. Earned from Usage levels.</p>
+          <p>${ICON.reset} <b>Resets</b>: premium. Refill your Limits, change a speciality, or buy rare items. Earned from Usage levels.</p>
           <p>${ICON.usage} <b>Usage</b>: account XP from upgrades and battles. Each level pays Tokens and Resets.</p>
         </section>
       </div>`);
@@ -429,7 +462,10 @@ export class PvpScreens {
       <div class="elo-line ${res.elo >= 0 ? 'up' : 'down'}">${ICON.elo}<b>${p.elo}</b><i>${res.elo >= 0 ? '+' : ''}${res.elo}</i></div>
       ${res.arenaUp ? `<div class="arena-up">New arena: <b>${arena.name}</b>. New units can now drop from Checkpoints.</div>` : ''}
       ${this.statsLine(match)}
-      <div class="rewards"><span class="pill gold">${ICON.token}<b>+${res.tokens}</b> Tokens</span><span class="pill">${ICON.usage}<b>+${res.usage}</b> Usage</span></div>
+      <div class="rewards"><span class="pill gold">${ICON.token}<b>+${res.tokens}</b> Tokens</span><span class="pill">${ICON.usage}<b>+${res.usage}</b> Usage</span>
+        <span class="pill">${ICON.shard}<b>+${res.mats.shards}</b> Shards</span>
+        ${FAMILIES.filter((f) => res.mats.sigils[f]).map((f) => `<span class="pill" style="color:${FAMILY_INFO[f].css}">${ICON.sigil}<b>+${res.mats.sigils[f]}</b></span>`).join('')}
+        ${res.mats.cores ? `<span class="pill gold">${ICON.ncore}<b>+${res.mats.cores}</b> Neural Core</span>` : ''}</div>
       ${res.reached.map((l) => `<div class="lvlup">${ICON.usage} Usage level ${l} · ${usageTier(l)} — +${100 * l} Tokens, +2 Resets, Limits reset</div>`).join('')}
       ${res.checkpoint ? `<button class="checkpoint ${res.checkpoint.kind}" data-act="pv-open" style="--cc:${CHECKPOINT_INFO[res.checkpoint.kind].css}"><span class="cp-box"></span><b>${CHECKPOINT_INFO[res.checkpoint.kind].name}</b><i>Tap to open</i></button>` : ''}
       <div class="btn-col">
@@ -455,12 +491,15 @@ export class PvpScreens {
     if (won) this.host.audio.win(); else if (!draw) this.host.audio.lose();
     const rival = match.sides[foe].name;
     const r = this.net?.result;
+    const shards = friendDuelReward(this.p, Date.now());
+    if (shards) this.save();
     const why = r?.reason === 'timeout' ? (won ? `${rival} lost the connection for more than 30 seconds.` : 'You were disconnected for more than 30 seconds, so the match counted as a loss.')
       : r?.reason === 'forfeit' ? (won ? `${rival} conceded.` : 'You conceded.') : '';
     ui.openModal(`<div class="sheet result ${won || draw ? 'won' : 'lost'}" data-noclose>
       <div class="eyebrow">Friend duel · vs ${esc(rival)}</div><h2>${draw ? 'Draw' : won ? 'Victory' : 'Defeat'}</h2>
       ${why ? `<p class="dim center">${esc(why)}</p>` : ''}
       ${this.statsLine(match, false, me)}
+      ${shards ? `<div class="rewards"><span class="pill">${ICON.shard}<b>+${shards}</b> Data Shards</span></div>` : ''}
       <div class="btn-col"><button class="btn primary big wide" data-act="pv-on-rematch">${ICON.restart}<span>Rematch</span></button>
       <button class="btn wide" data-act="pv-on-leave">${ICON.back}<span>Leave room</span></button></div></div>`);
     this.host.renderNow();
@@ -697,8 +736,13 @@ export class PvpScreens {
         this.pickSlotFor = null; this.collection();
         break;
       case 'pv-buy': {
-        const r = buyOffer(p, arg, now);
-        if (r === 'ok') { this.save(); a.upgrade(); this.host.ui.say('Purchased'); }
+        const got: { loot?: CheckpointLoot } = {};
+        const r = buyOffer(p, arg, now, currentPerk(now).family, got);
+        if (r === 'ok') {
+          this.save(); a.upgrade();
+          const l = got.loot;
+          this.host.ui.say(l ? `${CHECKPOINT_INFO[l.kind].name}: ${fmt(l.tokens)} Tokens, ${l.weights.reduce((x, w) => x + w.n, 0)} cards${l.mats ? `, ${l.mats.shards} Shards${l.mats.cores ? `, ${l.mats.cores} Core` : ''}` : ''}` : 'Purchased');
+        }
         else { a.deny(); this.host.ui.say(r === 'tokens' ? 'Not enough Tokens' : r === 'resets' ? 'Not enough Resets' : r === 'full' ? 'Your Limits are already full' : 'Not available'); }
         this.shop();
         break;

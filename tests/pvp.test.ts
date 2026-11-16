@@ -10,7 +10,7 @@ import { SIGNATURES, SIGNATURE_BY_ID, TALENT_LEVELS } from '../src/pvp/signature
 import { SPECIALITIES, specialityMods } from '../src/pvp/specialities';
 import { dutyOf } from '../src/data/towers';
 import {
-  ARENAS, LIMIT_MAX, LIMIT_REGEN_S, MAX_CARD_LEVEL, TOKENS_TABLE, WEIGHTS_TABLE, arenaFor, dailyOffers, eloDelta, nextLimitIn, openCheckpoint,
+  ARENAS, BREAKTHROUGH_COST, LIMIT_MAX, LIMIT_REGEN_S, MAX_CARD_LEVEL, TOKENS_TABLE, WEIGHTS_TABLE, arenaFor, dailyOffers, eloDelta, nextLimitIn, openCheckpoint,
   startLevel, tickLimits, unitsUpTo, upgradeCost, usageLevel, usageToNext,
 } from '../src/pvp/economy';
 import {
@@ -176,18 +176,21 @@ test('upgrading spends Weights and Tokens, Breakthroughs need materials, stops a
   while (upgrade(p, 'gem_flash', T0));
   assert.equal(p.cards.gem_flash.level, 5, 'level 6 is a Breakthrough');
   assert.equal(canUpgrade(p, 'gem_flash'), 'shards');
-  p.mats.shards = 1000;
+  p.mats.shards = 2000;
   upgrade(p, 'gem_flash', T0); upgrade(p, 'gem_flash', T0);
   assert.equal(p.cards.gem_flash.level, 7);
   assert.equal(canUpgrade(p, 'gem_flash'), 'sigils', 'level 8 needs London Sigils');
   p.mats.sigils.gemini = 100;
   upgrade(p, 'gem_flash', T0); upgrade(p, 'gem_flash', T0);
   assert.equal(canUpgrade(p, 'gem_flash'), 'cores', 'level 10 needs Neural Cores');
-  p.mats.cores = 2;
+  const bt = BREAKTHROUGH_COST.common[10];
+  p.mats.cores = bt.cores - 1;
+  assert.equal(canUpgrade(p, 'gem_flash'), 'cores');
+  p.mats.cores = bt.cores;
   const shards = p.mats.shards;
   upgrade(p, 'gem_flash', T0);
   assert.equal(p.mats.cores, 0);
-  assert.equal(p.mats.shards, shards - 150);
+  assert.equal(p.mats.shards, shards - bt.shards);
   assert.equal(p.cards.gem_flash.level, MAX_CARD_LEVEL);
   assert.equal(canUpgrade(p, 'gem_flash'), 'max');
   assert.ok(p.resets > 5, 'Usage levels paid Resets');
@@ -252,16 +255,37 @@ test('settling matches: wins pay Tokens, Elo and a Checkpoint; losses cost Elo',
   assert.ok(kinds.some((k) => k === 'epic' || k === 'legendary'));
 });
 
-test('shop: each daily deal sells once; Limits deal needs Resets and room', () => {
+test('shop: daily deals sell once a day, weekly ones once a week; materials, Checkpoints and Limits', () => {
   const p = newProfile(T0);
-  p.tokens = 1e6;
-  const deal = shopOffers(p, T0).find((o) => o.costTokens)!;
+  p.tokens = 1e6; p.resets = 50;
+  const deal = shopOffers(p, T0).find((o) => o.section === 'daily')!;
   assert.equal(buyOffer(p, deal.key, T0), 'ok');
   assert.equal(buyOffer(p, deal.key, T0), 'sold');
+  assert.equal(shopOffers(p, T0 + 86400000).find((o) => o.section === 'daily')!.sold, false, 'daily deals reset the next day');
+  // featured-class Sigils: once a week
+  const sig = shopOffers(p, T0, 'claude').find((o) => o.key.endsWith('-sig'))!;
+  const before = p.mats.sigils.claude;
+  assert.equal(buyOffer(p, sig.key, T0, 'claude'), 'ok');
+  assert.equal(p.mats.sigils.claude, before + 15);
+  assert.equal(shopOffers(p, T0 + 86400000, 'claude').find((o) => o.key === sig.key)?.sold ?? true, true, 'still sold the next day of the same week');
+  // shards and a Neural Core
+  const sh = shopOffers(p, T0).find((o) => o.mats?.shards === 100)!;
+  const s0 = p.mats.shards;
+  assert.equal(buyOffer(p, sh.key, T0), 'ok');
+  assert.equal(p.mats.shards, s0 + 100);
+  const core = shopOffers(p, T0).find((o) => o.mats?.cores)!;
+  assert.equal(buyOffer(p, core.key, T0), 'ok');
+  assert.ok(p.mats.cores >= 1);
+  // a Checkpoint opens on the spot
+  const cp = shopOffers(p, T0).find((o) => o.checkpoint === 'rare')!;
+  const got: { loot?: { tokens: number } } = {};
+  const tk = p.tokens;
+  assert.equal(buyOffer(p, cp.key, T0, 'gemini', got as never), 'ok');
+  assert.ok(got.loot && got.loot.tokens > 0 && p.tokens > tk - cp.costTokens!);
+  // Limits
   assert.equal(buyOffer(p, 'limits', T0), 'full');
   spendLimit(p, T0);
   assert.equal(buyOffer(p, 'limits', T0), 'ok');
-  assert.equal(shopOffers(p, T0 + 86400000).find((o) => o.costTokens)!.sold, false, 'deals reset the next day');
 });
 
 test('first Weight of a unit unlocks it', () => {
@@ -594,14 +618,18 @@ test('old saves move to the 1–10 scale, get a welcome kit, and refund units th
   assert.equal(again.cards.gem_flash.level, 10);
 });
 
-test('ranked matches pay Data Shards and Sigils (doubled for the featured class); 10 weekly wins pay a Neural Core', () => {
+test('ranked matches pay Data Shards and a Sigil on wins (doubled for the featured class); 10 weekly wins pay a Neural Core', () => {
   const p = newProfile(T0);
   const s0 = p.mats.shards;
   const r = settleMatch(p, 1, 0, () => 0.5, T0, 'gemini');
-  assert.equal(r.mats.shards, 6);
-  assert.equal(p.mats.shards >= s0 + 6, true);
-  assert.equal(r.mats.sigils.gemini, 4, 'featured: 2 × 2');
-  assert.equal(r.mats.sigils.claude, 2);
+  assert.equal(r.mats.shards, 2);
+  assert.equal(p.mats.shards >= s0 + 2, true);
+  assert.equal(r.mats.sigils.gemini, 2, 'a win pays a Sigil of the featured class, doubled');
+  assert.equal(r.mats.sigils.claude + r.mats.sigils.codex + r.mats.sigils.grok, 0);
+  const loss = settleMatch(p, 0, 0, () => 0.5, T0, 'gemini');
+  assert.equal(loss.mats.shards, 1);
+  assert.equal(loss.mats.sigils.gemini, 0, 'losses pay no Sigils');
+  const c0 = p.mats.cores;
   for (let i = 0; i < 9; i++) settleMatch(p, 1, 0, () => 0.5, T0, null);
-  assert.ok(p.mats.cores >= 1);
+  assert.ok(p.mats.cores >= c0 + 1);
 });

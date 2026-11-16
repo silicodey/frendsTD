@@ -30,7 +30,7 @@ export const WEIGHTS_TABLE: Record<Rarity, number[]> = {
 };
 
 /** Tokens to reach each level (index = target level). */
-export const TOKENS_TABLE = [0, 0, 20, 50, 100, 200, 400, 800, 1600, 3200, 5000];
+export const TOKENS_TABLE = [0, 0, 50, 120, 250, 500, 1000, 2000, 4000, 8000, 15000];
 
 /** Levels that are Breakthroughs: they also cost materials, and each teaches a speciality. */
 export const BREAKTHROUGHS = [6, 8, 10];
@@ -40,10 +40,10 @@ export const noMaterials = (): Materials => ({ shards: 0, cores: 0, sigils: { ge
 
 /** Extra materials for a Breakthrough, by rarity. */
 export const BREAKTHROUGH_COST: Record<Rarity, Record<number, { shards: number; sigils: number; cores: number }>> = {
-  common: { 6: { shards: 20, sigils: 0, cores: 0 }, 8: { shards: 60, sigils: 10, cores: 0 }, 10: { shards: 150, sigils: 30, cores: 2 } },
-  rare: { 6: { shards: 25, sigils: 0, cores: 0 }, 8: { shards: 70, sigils: 12, cores: 0 }, 10: { shards: 170, sigils: 35, cores: 3 } },
-  epic: { 6: { shards: 30, sigils: 0, cores: 0 }, 8: { shards: 80, sigils: 15, cores: 1 }, 10: { shards: 200, sigils: 40, cores: 4 } },
-  legendary: { 6: { shards: 40, sigils: 0, cores: 0 }, 8: { shards: 100, sigils: 20, cores: 1 }, 10: { shards: 250, sigils: 50, cores: 5 } },
+  common: { 6: { shards: 40, sigils: 0, cores: 0 }, 8: { shards: 120, sigils: 20, cores: 0 }, 10: { shards: 300, sigils: 60, cores: 3 } },
+  rare: { 6: { shards: 50, sigils: 0, cores: 0 }, 8: { shards: 140, sigils: 24, cores: 0 }, 10: { shards: 340, sigils: 70, cores: 4 } },
+  epic: { 6: { shards: 60, sigils: 0, cores: 0 }, 8: { shards: 160, sigils: 30, cores: 1 }, 10: { shards: 400, sigils: 80, cores: 5 } },
+  legendary: { 6: { shards: 80, sigils: 0, cores: 0 }, 8: { shards: 200, sigils: 40, cores: 1 }, 10: { shards: 500, sigils: 100, cores: 6 } },
 };
 
 export function startLevel(id: string) { return RARITY_INFO[rarityOf(TOWER_BY_ID[id])].startLevel; }
@@ -168,21 +168,38 @@ export function openCheckpoint(kind: CheckpointKind, arena: number, rng: () => n
 }
 
 // ------------------------------------------------------------------ Shop
-export interface Offer { key: string; id?: string; weights?: number; tokens?: number; costTokens?: number; costResets?: number; label: string }
+export type ShopSection = 'week' | 'daily' | 'materials' | 'checkpoints' | 'wallet';
+export interface Offer {
+  key: string; section: ShopSection; label: string;
+  id?: string; weights?: number; tokens?: number; mats?: Partial<Omit<Materials, 'sigils'>> & { sigils?: Partial<Record<Family, number>> };
+  checkpoint?: CheckpointKind; costTokens?: number; costResets?: number;
+}
 
-/** Today's shop: three Weights offers rotate daily (seeded by date), plus fixed Reset deals. */
-export function dailyOffers(day: number, arena: number): Offer[] {
+/**
+ * The shop: daily unit deals (seeded by date), materials, Checkpoints, and this week's featured-class
+ * Sigils. Keys carry the day or week, so each deal can be bought once in its period. No real money:
+ * Resets are only earned (real-money packs come later, through the app store).
+ */
+export function dailyOffers(day: number, arena: number, featured: Family = 'gemini'): Offer[] {
   const rng = mulberry32(day * 2654435761);
+  const week = Math.floor((day + 3) / 7);
   const pool = unitsUpTo(arena);
   const pick = (r: Rarity) => { const l = pool.filter((id) => rarityOf(TOWER_BY_ID[id]) === r); return l.length ? l[Math.floor(rng() * l.length)] : null; };
   const out: Offer[] = [];
+  out.push({ key: `w${week}-sig`, section: 'week', mats: { sigils: { [featured]: 15 } }, costTokens: 600, label: '15 Sigils' });
+  out.push({ key: `w${week}-sig2`, section: 'week', mats: { sigils: { [featured]: 40 } }, costResets: 2, label: '40 Sigils' });
   const c = pick('common'), r = pick('rare'), e = pick('epic') ?? pick('rare'), l = pick('legendary');
-  if (c) out.push({ key: `d${day}-c`, id: c, weights: 40, costTokens: 200, label: '40 Weights' });
-  if (r) out.push({ key: `d${day}-r`, id: r, weights: 12, costTokens: 400, label: '12 Weights' });
-  if (e) out.push({ key: `d${day}-e`, id: e, weights: rarityOf(TOWER_BY_ID[e]) === 'epic' ? 3 : 20, costTokens: 1000, label: rarityOf(TOWER_BY_ID[e]) === 'epic' ? '3 Weights' : '20 Weights' });
-  if (l) out.push({ key: `d${day}-l`, id: l, weights: 1, costTokens: 5000, label: '1 Weight' });
-  out.push({ key: 'limits', costResets: 1, label: 'Reset your Limits' });
-  out.push({ key: `d${day}-tok`, tokens: 600, costResets: 3, label: '600 Tokens' });
+  if (c) out.push({ key: `d${day}-c`, section: 'daily', id: c, weights: 40, costTokens: 200, label: '40 cards' });
+  if (r) out.push({ key: `d${day}-r`, section: 'daily', id: r, weights: 12, costTokens: 400, label: '12 cards' });
+  if (e) out.push({ key: `d${day}-e`, section: 'daily', id: e, weights: rarityOf(TOWER_BY_ID[e]) === 'epic' ? 3 : 20, costTokens: 1000, label: rarityOf(TOWER_BY_ID[e]) === 'epic' ? '3 cards' : '20 cards' });
+  if (l) out.push({ key: `d${day}-l`, section: 'daily', id: l, weights: 1, costTokens: 5000, label: '1 card' });
+  out.push({ key: `d${day}-sh1`, section: 'materials', mats: { shards: 30 }, costTokens: 300, label: '30 Data Shards' });
+  out.push({ key: `d${day}-sh2`, section: 'materials', mats: { shards: 100 }, costTokens: 900, label: '100 Data Shards' });
+  out.push({ key: `w${week}-core`, section: 'materials', mats: { cores: 1 }, costResets: 3, label: '1 Neural Core' });
+  out.push({ key: `d${day}-cp`, section: 'checkpoints', checkpoint: 'rare', costTokens: 800, label: 'Rare Checkpoint' });
+  out.push({ key: `w${week}-cpe`, section: 'checkpoints', checkpoint: 'epic', costResets: 6, label: 'Epic Checkpoint' });
+  out.push({ key: 'limits', section: 'wallet', costResets: 1, label: 'Reset your Limits' });
+  out.push({ key: `d${day}-tok`, section: 'wallet', tokens: 600, costResets: 3, label: '600 Tokens' });
   return out;
 }
 
@@ -194,11 +211,15 @@ export const weekStart = (week: number) => (week * 7 - 3) * 86400000;
 
 // ------------------------------------------------------------------ material rewards
 export const FAMILY_KEYS: Family[] = ['gemini', 'claude', 'codex', 'grok'];
-/** Materials from one ranked match: Data Shards always, Sigils for each class you played (×2 for the featured class). */
-export function matchMaterials(score: number, deckFamilies: Family[], featured: Family | null): Materials {
+/** Materials from one ranked match: a few Data Shards, and on a win a Sigil of one of your deck's classes (×2 for the featured class). */
+export function matchMaterials(score: number, deckFamilies: Family[], featured: Family | null, roll = 0.5): Materials {
   const m = noMaterials();
-  m.shards = score === 1 ? 6 : score === 0.5 ? 4 : 2;
-  for (const f of new Set(deckFamilies)) m.sigils[f] += (score === 1 ? 2 : 1) * (f === featured ? 2 : 1);
+  m.shards = score === 1 ? 2 : 1;
+  if (score === 1 && deckFamilies.length) {
+    // the featured class is picked whenever it's in the deck; otherwise a random deck class
+    const f = featured && deckFamilies.includes(featured) ? featured : deckFamilies[Math.floor(roll * deckFamilies.length) % deckFamilies.length];
+    m.sigils[f] += f === featured ? 2 : 1;
+  }
   return m;
 }
 export const WEEKLY_CORE_WINS = 10;
@@ -208,10 +229,10 @@ export const FRIEND_SHARDS = 2, FRIEND_SHARDS_DAILY_CAP = 20;
 export function checkpointMaterials(kind: CheckpointKind, rng: () => number): Materials {
   const m = noMaterials();
   const fam = () => FAMILY_KEYS[Math.floor(rng() * FAMILY_KEYS.length)];
-  if (kind === 'common') m.shards = 8;
-  else if (kind === 'rare') { m.shards = 20; m.sigils[fam()] += 3; }
-  else if (kind === 'epic') { m.shards = 50; m.sigils[fam()] += 8; if (rng() < 0.15) m.cores = 1; }
-  else { m.shards = 120; m.sigils[fam()] += 15; m.cores = 1 + (rng() < 0.5 ? 1 : 0); }
+  if (kind === 'common') m.shards = 2;
+  else if (kind === 'rare') { m.shards = 4; m.sigils[fam()] += 1; }
+  else if (kind === 'epic') { m.shards = 10; m.sigils[fam()] += 3; if (rng() < 0.08) m.cores = 1; }
+  else { m.shards = 25; m.sigils[fam()] += 6; m.cores = 1; }
   return m;
 }
 export function addMaterials(into: Materials, add: Materials) {

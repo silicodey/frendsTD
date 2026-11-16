@@ -7,6 +7,7 @@ import {
 } from './economy';
 import { PVP_IDS } from './roster';
 import { TOWER_BY_ID as TOWERS_ALL } from '../data/towers';
+import { mulberry32 as mulberryOf } from '../data/levels';
 import type { Family } from '../data/types';
 import { TALENT_LEVELS } from './signatures';
 import { hasSpecialities } from './specialities';
@@ -212,7 +213,7 @@ export function settleMatch(p: PvpProfile, score: number, rivalElo: number, rng:
   if (score === 1) { p.wins++; p.streak++; } else if (score === 0) { p.losses++; p.streak = 0; } else p.draws++;
   const usage = matchUsage(score);
   const reached = addUsage(p, usage, now);
-  const mats = matchMaterials(score, p.deck.map((id) => TOWERS_ALL[id].family), featured);
+  const mats = matchMaterials(score, p.deck.map((id) => TOWERS_ALL[id].family), featured, rng());
   const wk = weekNumber(now);
   if (p.week !== wk) { p.week = wk; p.weekWins = 0; }
   if (score === 1 && p.weekWins < WEEKLY_CORE_WINS) { p.weekWins++; if (p.weekWins === WEEKLY_CORE_WINS) mats.cores += 1; }
@@ -241,13 +242,13 @@ export function friendDuelReward(p: PvpProfile, now: number): number {
   return n;
 }
 
-export function shopOffers(p: PvpProfile, now: number): (Offer & { sold: boolean })[] {
+export function shopOffers(p: PvpProfile, now: number, featured: Family = 'gemini'): (Offer & { sold: boolean })[] {
   const day = dayNumber(now);
-  return dailyOffers(day, arenaOf(p).id).map((o) => ({ ...o, sold: o.key !== 'limits' && p.bought[o.key] === day }));
+  return dailyOffers(day, arenaOf(p).id, featured).map((o) => ({ ...o, sold: o.key !== 'limits' && p.bought[o.key] !== undefined }));
 }
 
-export function buyOffer(p: PvpProfile, key: string, now: number): 'ok' | 'tokens' | 'resets' | 'sold' | 'full' | 'gone' {
-  const o = shopOffers(p, now).find((x) => x.key === key);
+export function buyOffer(p: PvpProfile, key: string, now: number, featured: Family = 'gemini', out?: { loot?: CheckpointLoot }): 'ok' | 'tokens' | 'resets' | 'sold' | 'full' | 'gone' {
+  const o = shopOffers(p, now, featured).find((x) => x.key === key);
   if (!o) return 'gone';
   if (o.sold) return 'sold';
   if (o.key === 'limits') return resetLimits(p, now) ? 'ok' : p.resets < 1 ? 'resets' : 'full';
@@ -256,7 +257,21 @@ export function buyOffer(p: PvpProfile, key: string, now: number): 'ok' | 'token
   p.tokens -= o.costTokens ?? 0; p.resets -= o.costResets ?? 0;
   if (o.id && o.weights) grantWeights(p, o.id, o.weights);
   if (o.tokens) p.tokens += o.tokens;
+  if (o.mats) {
+    p.mats.shards += o.mats.shards ?? 0; p.mats.cores += o.mats.cores ?? 0;
+    for (const [f, n] of Object.entries(o.mats.sigils ?? {}) as [Family, number][]) p.mats.sigils[f] += n;
+  }
+  if (o.checkpoint) {
+    const loot = openCheckpoint(o.checkpoint, arenaOf(p).id, mulberryOf(now ^ key.length * 7919));
+    p.tokens += loot.tokens;
+    if (loot.mats) addMaterials(p.mats, loot.mats);
+    for (const w of loot.weights) grantWeights(p, w.id, w.n);
+    if (out) out.loot = loot;
+  }
   p.bought[o.key] = dayNumber(now);
+  // forget purchases older than a few weeks
+  const d = dayNumber(now);
+  for (const [k, v] of Object.entries(p.bought)) if (d - v > 21) delete p.bought[k];
   return 'ok';
 }
 
