@@ -1,4 +1,4 @@
-import { TOWER_BY_ID, traits } from '../data/towers';
+import { TOWER_BY_ID, dutyOf, subroleOf, traits } from '../data/towers';
 import { mulberry32 } from '../data/levels';
 import { FAMILIES, FAMILY_INFO, type Family } from '../data/types';
 import type { AudioEngine } from '../audio/audio';
@@ -67,6 +67,7 @@ export function makeRival(elo: number, myDeck: DeckCard[], arena: number, rng: (
 
 export class PvpScreens {
   private filter: Family | 'all' = 'all';
+  private roleFilter: 'all' | 'damage' | 'support' = 'all';
   private pickSlotFor: string | null = null;
   private timer = 0;
   private lastResult: MatchResult | null = null;
@@ -208,6 +209,7 @@ export class PvpScreens {
     return `<button class="utile ${ok ? 'can' : ''} ${extra}" data-act="pv-unit" data-arg="${id}" style="--rc:${r.css};--fc:${fam.css}">
       <img src="${this.thumb(id)}" alt="">
       ${isSignature(id) ? `<span class="u-sig" title="Signature unit">★</span>` : ''}
+      <span class="u-role ${dutyOf(def)}" title="${dutyOf(def) === 'support' ? 'Support' : 'Damage'} · ${subroleOf(def)}">${dutyOf(def) === 'support' ? ICON.shield : ICON.swords}</span>
       <span class="u-lvl">Lv ${c.level}</span>
       <span class="u-name">${esc(def.name)}</span>
       ${showWeights ? `<span class="u-w ${ok ? 'ok' : ''}"><i style="width:${Math.round(w * 100)}%"></i><b>${cost ? `${c.weights}/${cost.weights}` : 'MAX'}</b></span>` : ''}
@@ -217,7 +219,7 @@ export class PvpScreens {
   // ------------------------------------------------------------------ collection
   collection() {
     const p = this.p;
-    const list = PVP_UNITS.filter((t) => this.filter === 'all' || t.family === this.filter)
+    const list = PVP_UNITS.filter((t) => (this.filter === 'all' || t.family === this.filter) && (this.roleFilter === 'all' || dutyOf(t) === this.roleFilter))
       .sort((a, b) => (p.cards[b.id] ? 1 : 0) - (p.cards[a.id] ? 1 : 0) || RARITY_INFO[rarityOf(a)].startLevel - RARITY_INFO[rarityOf(b)].startLevel || a.tier - b.tier);
     const ownedN = PVP_UNITS.filter((t) => p.cards[t.id]).length;
     this.screen('pvp-coll', `
@@ -225,7 +227,8 @@ export class PvpScreens {
       ${this.pickSlotFor ? `<div class="pick-hint">Tap a deck slot to put <b>${esc(TOWER_BY_ID[this.pickSlotFor].name)}</b> in it. <button class="link" data-act="pv-pick-cancel">Cancel</button></div>` : ''}
       <div class="deck5 slots-row">${p.deck.map((id, i) => `<div class="slotwrap ${this.pickSlotFor ? 'pick' : ''}" ${this.pickSlotFor ? `data-act="pv-slot" data-arg="${i}"` : ''}>${this.unitTile(id, false)}</div>`).join('')}</div>
       <nav class="tabs five">${(['all', ...FAMILIES] as const).map((f) => `<button class="tab ${this.filter === f ? 'on' : ''}" style="--fc:${f === 'all' ? '#dfe8ff' : FAMILY_INFO[f].css}" data-act="pv-filter" data-arg="${f}">${f === 'all' ? 'All' : FAMILY_INFO[f].name}</button>`).join('')}</nav>
-      <p class="coll-note">${ownedN}/${PVP_UNITS.length} collected · ★ Signature units have talents</p>
+      <nav class="tabs roles">${(['all', 'damage', 'support'] as const).map((r) => `<button class="tab ${this.roleFilter === r ? 'on' : ''}" data-act="pv-role" data-arg="${r}">${r === 'all' ? 'Any role' : r === 'damage' ? `${ICON.swords} Damage` : `${ICON.shield} Support`}</button>`).join('')}</nav>
+      <p class="coll-note">${ownedN}/${PVP_UNITS.length} collected · ★ Signature units have a special capability</p>
       <div class="scroll"><div class="ugrid">${list.map((t) => this.unitTile(t.id, true)).join('')}</div></div>`);
   }
 
@@ -263,6 +266,7 @@ export class PvpScreens {
           <img src="${this.thumb(id, 384)}" alt="">
           <div class="us-h">
             <div class="eyebrow">${fam.name} · ${r.name}${sig ? ' · ★ Signature' : ''}</div>
+            <div class="duty ${dutyOf(def)}">${dutyOf(def) === 'support' ? ICON.shield : ICON.swords}${dutyOf(def) === 'support' ? 'Support' : 'Damage'} · ${subroleOf(def)}</div>
             <h2>${esc(def.name)}</h2>
             <div class="role">${esc(def.role)}</div>
             ${c ? `<div class="us-lvl">Level <b>${c.level}</b><i>/${MAX_CARD_LEVEL}</i></div>` : `<div class="us-lvl locked">${ICON.lock} ${arena.id <= arenaOf(p).id ? 'Find its first Weight in a Checkpoint' : `Unlocks in ${arena.name} (${arena.elo} Elo)`}</div>`}
@@ -623,6 +627,7 @@ export class PvpScreens {
       case 'pv-collection': this.collection(); break;
       case 'pv-shop': this.shop(); break;
       case 'pv-filter': this.filter = arg as Family | 'all'; this.collection(); break;
+      case 'pv-role': this.roleFilter = arg as 'all' | 'damage' | 'support'; this.collection(); break;
       case 'pv-unit': this.unit(arg); break;
       case 'pv-upgrade': {
         const r = upgrade(p, arg, now);

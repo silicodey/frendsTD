@@ -78,7 +78,7 @@ export const ARENAS: Arena[] = [
   { id: 0, name: 'Sandbox', elo: 0, theme: 0, unlocks: PVP_UNITS.filter((t) => ['common', 'rare'].includes(rarityOf(t))).map((t) => t.id), blurb: 'Where every model starts. Commons and rares.' },
   { id: 1, name: 'Staging', elo: 300, theme: 0, unlocks: PVP_UNITS.filter((t) => rarityOf(t) === 'epic').map((t) => t.id), blurb: 'Epic units join the Checkpoints.' },
   { id: 2, name: 'Canary', elo: 700, theme: 1, unlocks: ['gem_deepthink', 'cl_computer', 'cx_refactor', 'gk_heavy'], blurb: 'The first legendaries appear.' },
-  { id: 3, name: 'Production', elo: 1200, theme: 1, unlocks: ['gem_constellation', 'cl_mythos', 'cx_swarm', 'gk_blackhole'], blurb: 'More legendaries, tougher rivals.' },
+  { id: 3, name: 'Production', elo: 1200, theme: 1, unlocks: ['cx_swarm', 'gk_blackhole'], blurb: 'More legendaries, tougher rivals.' },
   { id: 4, name: 'Frontier', elo: 1800, theme: 2, unlocks: ['gem_twinsuns', 'cl_fable', 'cx_max', 'gk_supernova'], blurb: 'Every unit is in play.' },
   { id: 5, name: 'Singularity', elo: 2500, theme: 2, unlocks: [], blurb: 'The top of the ladder.' },
 ];

@@ -10,7 +10,7 @@ import { ICON } from '../ui/icons';
 import { PvpBot } from './bot';
 import { HEARTS, MAX_POWER, PvpMatch, type MatchEvent, type PlayerSetup } from './match';
 import { RARITY_INFO, rarityOf } from './roster';
-import { traits } from '../data/towers';
+import { dutyOf, subroleOf, traits } from '../data/towers';
 import { SIGNATURE_BY_ID } from './signatures';
 import type { OnlineSession } from '../net/client';
 import { DT, HASH_EVERY, Lockstep, TICK_MS, applyCmd, matchHash, type Cmd } from '../net/protocol';
@@ -281,6 +281,7 @@ export class Duel {
         <div class="us-h">
           <div class="eyebrow">${fam.name} · ${r.name}${sig ? ' · ★ Signature' : ''}</div>
           <h2>${esc(def.name)}</h2>
+          <div class="duty ${dutyOf(def)}">${dutyOf(def) === 'support' ? ICON.shield : ICON.swords}${dutyOf(def) === 'support' ? 'Support' : 'Damage'} · ${subroleOf(def)}</div>
           <div class="role">${esc(def.role)} · power Lv ${pl}/${MAX_POWER}</div>
         </div>
       </div>

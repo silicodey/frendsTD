@@ -1,4 +1,4 @@
-import { TOWERS, approxDps, traits } from '../data/towers';
+import { TOWERS, approxDps, dutyOf, traits } from '../data/towers';
 import { FAMILIES, type Family, type TowerDef, type TowerKind } from '../data/types';
 
 /**
@@ -16,6 +16,7 @@ import { FAMILIES, type Family, type TowerDef, type TowerKind } from '../data/ty
  *   identity   how unusual its attack type is within its family
  *
  * Income towers are excluded: in a merge duel compute comes from kills, so they have nothing to do.
+ * Every class keeps at least one Support unit (buff, control or debuff), so decks mix roles.
  */
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -70,8 +71,19 @@ export function selectRoster(): { family: Family; units: TowerDef[]; signatures:
       if (band.length) picked.push(best(band));
     }
     while (picked.length < PER_FAMILY) picked.push(best(pool.filter((t) => !picked.includes(t))));
-    picked.sort((a, b) => a.tier - b.tier);
     const signatures = [...picked].sort((a, b) => merit(b).total - merit(a).total).slice(0, SIGNATURES_PER_FAMILY);
+    // every class fields at least one Support unit: the best support replaces the weakest non-signature
+    // damage unit whose rarity band is still covered without it
+    if (!picked.some((t) => dutyOf(t) === 'support')) {
+      const supports = pool.filter((t) => dutyOf(t) === 'support' && !picked.includes(t));
+      const sup = supports.length ? supports.reduce((a, b) => (merit(b).total > merit(a).total ? b : a)) : null;
+      const out = sup && picked
+        .filter((t) => !signatures.includes(t) && dutyOf(t) === 'damage')
+        .filter((t) => rarityOfTier(t.tier) === rarityOfTier(sup.tier) || picked.some((o) => o !== t && rarityOfTier(o.tier) === rarityOfTier(t.tier)))
+        .sort((a, b) => merit(a).total - merit(b).total)[0];
+      if (sup && out) picked.splice(picked.indexOf(out), 1, sup);
+    }
+    picked.sort((a, b) => a.tier - b.tier);
     return { family, units: picked, signatures };
   });
 }

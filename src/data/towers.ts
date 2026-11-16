@@ -117,6 +117,33 @@ const GROK = fam('grok', [
 ]);
 
 export const TOWERS: TowerDef[] = [...GEMINI, ...CLAUDE, ...CODEX, ...GROK];
+
+// ------------------------------------------------------------------ roles
+export type Duty = 'damage' | 'support';
+/** Support units lift the board (buffs, economy) or work the enemy (control, debuffs) more than they kill. */
+const SUPPORT_IDS = new Set([
+  'cl_artifact', 'cl_constitution', 'cl_mcp', 'gk_colossus', // buff / economy
+  'gem_veo', 'cl_guardrail', 'cx_sandbox', 'gk_blackhole', // control
+  'cx_linter', 'cx_unittest', // debuff
+]);
+export const dutyOf = (def: TowerDef): Duty => (SUPPORT_IDS.has(def.id) ? 'support' : 'damage');
+/** A short tag under the role: what kind of damage, or what kind of support. */
+export function subroleOf(def: TowerDef): string {
+  if (dutyOf(def) === 'support') {
+    if (def.kind === 'income') return 'Economy';
+    if (def.buff) return 'Buff';
+    if (def.stun || def.pull || def.slow) return 'Control';
+    return 'Debuff';
+  }
+  switch (def.kind) {
+    case 'sniper': case 'rail': return 'Precision';
+    case 'beam': return 'Beam';
+    case 'lob': case 'nova': case 'strike': return 'Area';
+    case 'chain': return 'Chain';
+    case 'drone': return 'Drones';
+    default: return (def.targets ?? 1) > 1 || (def.burst ?? 1) > 1 ? 'Barrage' : 'Single';
+  }
+}
 export const TOWER_BY_ID: Record<string, TowerDef> = Object.fromEntries(TOWERS.map((t) => [t.id, t]));
 
 /** Stars required to unlock each tier (index = tier-1). */

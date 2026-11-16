@@ -12,6 +12,7 @@ export const ICON = {
   heart: svg('<path d="M12 20s-7.500-4.600-7.500-10A4.300 4.300 0 0 1 12 7.300 4.300 4.300 0 0 1 19.500 10c0 5.400-7.500 10-7.500 10z" fill="currentColor" stroke-width="1.4"/>'),
   shop: svg('<path d="M4 8h16l-1.500 12h-13z" fill="currentColor" fill-opacity=".18"/><path d="M8.500 8V6.500a3.500 3.500 0 0 1 7 0V8" />'),
   cards: svg('<rect x="3" y="6" width="11" height="15" rx="2" fill="currentColor" fill-opacity=".18"/><path d="M8 3h11a2 2 0 0 1 2 2v13" />'),
+  shield: svg('<path d="M12 3l7 3v5c0 4.500-3 8.200-7 10-4-1.800-7-5.500-7-10V6z" fill="currentColor" fill-opacity=".2"/><path d="M12 8v8M8 12h8" />'),
   globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.600 2.600 3.800 5.600 3.800 9s-1.200 6.400-3.800 9c-2.600-2.600-3.800-5.600-3.800-9S9.400 5.600 12 3z"/>'),
   link: svg('<path d="M10 14a4 4 0 0 0 5.700 0l3.300-3.300a4 4 0 0 0-5.700-5.700L12 6.300"/><path d="M14 10a4 4 0 0 0-5.700 0L5 13.300a4 4 0 0 0 5.700 5.700l1.300-1.300"/>'),
   copy: svg('<rect x="8" y="8" width="12" height="12" rx="2" fill="currentColor" fill-opacity=".18"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),

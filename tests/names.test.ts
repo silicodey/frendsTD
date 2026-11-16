@@ -32,3 +32,15 @@ test('no player-visible text names a real company or product', () => {
 test('classes are London, California, Prishtina and Tokyo', () => {
   assert.deepEqual(Object.values(FAMILY_INFO).map((f) => f.name), ['London', 'California', 'Prishtina', 'Tokyo']);
 });
+
+test('every class fields Damage and Support units in duels, and signatures are Damage or Support by design', async () => {
+  const { PVP_UNITS } = await import('../src/pvp/roster');
+  const { dutyOf, subroleOf } = await import('../src/data/towers');
+  for (const f of Object.keys(FAMILY_INFO)) {
+    const units = PVP_UNITS.filter((t) => t.family === f);
+    assert.equal(units.length, 6, f);
+    assert.ok(units.some((t) => dutyOf(t) === 'support'), `${f} has a support`);
+    assert.ok(units.filter((t) => dutyOf(t) === 'damage').length >= 4, `${f} is mostly damage`);
+  }
+  for (const t of TOWERS) assert.ok(subroleOf(t).length > 0);
+});

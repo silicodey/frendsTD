@@ -590,3 +590,13 @@ svg { display: block; }
 .card-info .us-top img { width: 96px; height: 96px; }
 .card-info .desc { margin: 0; }
 .set span i { display: block; margin-top: 3px; font: 500 11px/1.2 var(--display); font-style: normal; color: var(--dim); }
+/* roles */
+.utile .u-role { position: absolute; right: 4px; bottom: 26px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; background: rgba(5, 8, 14, 0.85); font-size: 12px; }
+.utile .u-role.damage { color: #ff9b6a; }
+.utile .u-role.support { color: #7cf0b4; }
+.duty { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; font: 600 12px/1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.duty.damage { color: #ff9b6a; }
+.duty.support { color: #7cf0b4; }
+.tabs.roles { grid-template-columns: repeat(3, 1fr); margin-top: 6px; }
+.tabs.roles .tab { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 34px; }
+.tabs.five .tab { font-size: 11px; letter-spacing: 0.02em; padding: 0 2px; }
