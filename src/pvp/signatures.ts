@@ -94,12 +94,12 @@ export const SIGNATURES: Signature[] = [
   },
   {
     unit: 'cl_code',
-    ability: { name: 'Agentic Merge', cd: 0, text: (p) => `When a merge produces Claude Code, ${pct(Math.min(0.6, 0.25 * p))} chance it comes out one rank higher.` },
+    ability: { name: 'Agentic Merge', cd: 0, text: (p) => `When a merge produces Scribe, ${pct(Math.min(0.6, 0.25 * p))} chance it comes out one rank higher.` },
     talents: [
       [T('cc1a', 'Long Horizon', '+2 chain jumps.', { chain: 2 }), T('cc1b', 'Sharper Output', '+25% damage.', { dmg: 0.25 })],
       [T('cc2a', 'Autonomy', 'Agentic Merge chance +15%.', { abilityPower: 0.6 }), T('cc2b', 'No Regressions', 'Chain keeps 95% damage per jump.', { chainKeep: 0.95 })],
       [T('cc3a', 'Interrupt', 'Bolts stun for 0.3s.', { stun: 0.3 }), T('cc3b', 'Fast Iteration', '+20% attack speed.', { rate: 0.2 })],
-      [T('cc4a', 'Parallel Agents', 'Attacks 90% faster.', { flags: ['doubleChain'] }), T('cc4b', 'Self-Improve', '+6% damage for each Claude Code on your board.', { flags: ['selfImprove'] })],
+      [T('cc4a', 'Parallel Agents', 'Attacks 90% faster.', { flags: ['doubleChain'] }), T('cc4b', 'Self-Improve', '+6% damage for each Scribe on your board.', { flags: ['selfImprove'] })],
     ],
   },
   {
@@ -151,7 +151,7 @@ export const SIGNATURES: Signature[] = [
       [T('gh1a', 'Heavier', '+25% damage.', { dmg: 0.25 }), T('gh1b', 'Scope', '+15% crit chance.', { crit: 0.15 })],
       [T('gh2a', 'Ruthless', 'Execute threshold +6%.', { abilityPower: 0.5 }), T('gh2b', 'Hollow Point', 'Crits deal ×3.5.', { critMult: 1 })],
       [T('gh3a', 'Autoloader', '+20% attack speed.', { rate: 0.2 }), T('gh3b', 'Wide Bore', 'Rail width +50%.', { railWidth: 0.5 })],
-      [T('gh4a', 'Unhinged', 'Every 3rd rail deals triple damage.', { flags: ['every3'] }), T('gh4b', 'Bounty Hunter', 'Executions give +5 compute.', { flags: ['bounty'] })],
+      [T('gh4a', 'Overdrive', 'Every 3rd rail deals triple damage.', { flags: ['every3'] }), T('gh4b', 'Bounty Hunter', 'Executions give +5 compute.', { flags: ['bounty'] })],
     ],
   },
   {

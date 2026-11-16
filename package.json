@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "frendsTD \u2014 a 3D tower defense where Gemini, Claude, Codex and Grok towers defend the Core.",
+  "description": "frendsTD \u2014 a 3D tower defense where four rival classes, London, California, Prishtina and Tokyo, defend the Core.",
   "scripts": {
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build && node tools/artifact.mjs",

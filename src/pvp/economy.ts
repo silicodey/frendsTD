@@ -9,7 +9,7 @@ import { PVP_UNITS, RARITY_INFO, rarityOf, type Rarity } from './roster';
  *   Weights  copies of a unit's card; each unit has its own Weights, needed (with Tokens) to level it up
  *   Limits   match energy: every ranked battle uses one; they refill over time ("your limit resets in 7:12")
  *   Resets   premium currency: instantly reset your Limits, change a talent, or buy Tokens
- *   Usage    account XP from upgrades and battles; levels up your Usage tier (Free → Pro → Max → Team → Enterprise)
+ *   Usage    account XP from upgrades and battles; levels up your Usage tier (Hobby → Builder → Studio → Scale → Hyperscale)
  *   Elo      rating; climbing it moves you through arenas, which unlock rarer units
  */
 
@@ -49,7 +49,7 @@ export function usageLevel(xp: number): { level: number; into: number; need: num
   return { level, into: xp, need: usageToNext(level) };
 }
 export function usageTier(level: number) {
-  return level < 5 ? 'Free' : level < 10 ? 'Pro' : level < 15 ? 'Max' : level < 20 ? 'Team' : 'Enterprise';
+  return level < 5 ? 'Hobby' : level < 10 ? 'Builder' : level < 15 ? 'Studio' : level < 20 ? 'Scale' : 'Hyperscale';
 }
 /** Reward for reaching a Usage level. */
 export const usageReward = (level: number) => ({ tokens: 100 * level, resets: 2 });

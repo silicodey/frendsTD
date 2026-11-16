@@ -156,7 +156,7 @@ export class UI {
       </div>
       <div class="title-mid">
         <div class="logo" aria-label="frendsTD"><span class="logo-a">frends</span><span class="logo-b">TD</span></div>
-        <p class="tagline">Four AI families. One Core. Hold the line.</p>
+        <p class="tagline">Four rival classes. One Core. Hold the line.</p>
         <div class="fam-row">${FAMILIES.map((f) => `<span class="fam-chip" style="--fc:${FAMILY_INFO[f].css}">${FAMILY_INFO[f].name}</span>`).join('')}</div>
       </div>
       <div class="title-bot">

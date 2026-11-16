@@ -1,3 +1,4 @@
+/** Internal class keys (players see FAMILY_INFO names: London, California, Prishtina, Tokyo). */
 export type Family = 'gemini' | 'claude' | 'codex' | 'grok';
 
 export type TowerKind =
@@ -120,10 +121,10 @@ export interface LevelDef {
 }
 
 export const FAMILY_INFO: Record<Family, { name: string; tagline: string; color: number; color2: number; css: string; css2: string }> = {
-  gemini: { name: 'Gemini', tagline: 'Light & prisms — beams, multi-target, range', color: 0x4f8cff, color2: 0xb46bff, css: '#5b9bff', css2: '#b77bff' },
-  claude: { name: 'Claude', tagline: 'Thought & care — support, control, precision', color: 0xff8a5c, color2: 0xffd3a8, css: '#ff8f63', css2: '#ffd9b0' },
-  codex: { name: 'Codex', tagline: 'Code & automation — rapid fire, shells, drones', color: 0x2ee6a6, color2: 0x9dffd9, css: '#2fe8a8', css2: '#a8ffe0' },
-  grok: { name: 'Grok', tagline: 'Chaos & lightning — burst, crits, mayhem', color: 0xff2d6f, color2: 0xffa0c0, css: '#ff3d7a', css2: '#ffb0cc' },
+  gemini: { name: 'London', tagline: 'Light & prisms — beams, multi-target, range', color: 0x4f8cff, color2: 0xb46bff, css: '#5b9bff', css2: '#b77bff' },
+  claude: { name: 'California', tagline: 'Verse & reason — support, control, precision', color: 0xff8a5c, color2: 0xffd3a8, css: '#ff8f63', css2: '#ffd9b0' },
+  codex: { name: 'Prishtina', tagline: 'Code & automation — rapid fire, shells, drones', color: 0x2ee6a6, color2: 0x9dffd9, css: '#2fe8a8', css2: '#a8ffe0' },
+  grok: { name: 'Tokyo', tagline: 'Chaos & lightning — burst, crits, mayhem', color: 0xff2d6f, color2: 0xffa0c0, css: '#ff3d7a', css2: '#ffb0cc' },
 };
 
 export const FAMILIES: Family[] = ['gemini', 'claude', 'codex', 'grok'];

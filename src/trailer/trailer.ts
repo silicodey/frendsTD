@@ -485,7 +485,7 @@ export class Trailer {
       },
     });
 
-    // ---------- 6. the 1v1: Opus vs Codex Max ----------
+    // ---------- 6. the 1v1: Anthem vs Kernel ----------
     const A: [number, number, number] = [0, 0, 2], B: [number, number, number] = [0, 0, -2], C: [number, number, number] = [2, 0, 2];
     const aim = () => {
       this.opus.aimX = 0; this.opus.aimZ = -4;
@@ -516,8 +516,8 @@ export class Trailer {
         aim(); decay(dt);
         const k = eo(seg(t, 0, 0.65));
         this.setCam([lerp(2.6, 1.9, k), 1.5, lerp(5.2, 4.6, k), 0, 0.95, 2, 30]);
-        this.title('p1', 'Claude', '70vh', 4, '#ff8f63', 1, `transform:translateX(${((1 - eo(seg(t, 0, 0.2))) * -60).toFixed(1)}vw)`, 0.3);
-        this.title('p1n', 'Opus', '74vh', 20, '#fff', 1, `transform:translateX(${((1 - eo(seg(t, 0.03, 0.25))) * -80).toFixed(1)}vw)`, 0.02);
+        this.title('p1', 'California', '70vh', 4, '#ff8f63', 1, `transform:translateX(${((1 - eo(seg(t, 0, 0.2))) * -60).toFixed(1)}vw)`, 0.3);
+        this.title('p1n', 'Anthem', '74vh', 20, '#fff', 1, `transform:translateX(${((1 - eo(seg(t, 0.03, 0.25))) * -80).toFixed(1)}vw)`, 0.02);
       },
     });
     S.push({
@@ -527,8 +527,8 @@ export class Trailer {
         aim(); decay(dt);
         const k = eo(seg(t, 0, 0.65));
         this.setCam([lerp(-2.8, -2.1, k), 1.7, lerp(0.9, 0.3, k), 0, 1.05, -2, 30]);
-        this.title('p2', 'Codex', '70vh', 4, '#2fe8a8', 1, `transform:translateX(${((1 - eo(seg(t, 0, 0.2))) * 60).toFixed(1)}vw)`, 0.3);
-        this.title('p2n', 'Codex Max', '74vh', 14.5, '#fff', 1, `transform:translateX(${((1 - eo(seg(t, 0.03, 0.25))) * 80).toFixed(1)}vw)`, 0.01);
+        this.title('p2', 'Prishtina', '70vh', 4, '#2fe8a8', 1, `transform:translateX(${((1 - eo(seg(t, 0, 0.2))) * 60).toFixed(1)}vw)`, 0.3);
+        this.title('p2n', 'Kernel', '74vh', 14.5, '#fff', 1, `transform:translateX(${((1 - eo(seg(t, 0.03, 0.25))) * 80).toFixed(1)}vw)`, 0.01);
       },
     });
     S.push({
@@ -561,7 +561,7 @@ export class Trailer {
           });
         }));
         bars();
-        this.caption('<b style="color:#ff8f63">OPUS</b> used Deliberate Orb', t, 0.15);
+        this.caption('<b style="color:#ff8f63">ANTHEM</b> used Deliberate Orb', t, 0.15);
       },
     });
     S.push({
@@ -588,7 +588,7 @@ export class Trailer {
           });
         });
         bars();
-        this.caption('<b style="color:#2fe8a8">CODEX MAX</b> used Ship To Prod ×6', t, 0.15);
+        this.caption('<b style="color:#2fe8a8">KERNEL</b> used Ship To Prod ×6', t, 0.15);
       },
     });
     S.push({
@@ -600,7 +600,7 @@ export class Trailer {
         this.setCam([lerp(2.4, 1.7, k), lerp(1.9, 1.6, k), lerp(4.9, 4.2, k), 0, 1.0, 2, 30]);
         if (Math.random() < dt * 30) fx().burst(A[0] + (Math.random() - 0.5) * 0.5, 0.6 + Math.random(), A[2] + (Math.random() - 0.5) * 0.5, 0xff8a4c, 1, 0.8, 0.07, 0.5, -1, 0.5);
         bars(false);
-        this.caption(`<b style="color:#ff8f63">OPUS</b> is thinking${'.'.repeat(1 + Math.floor(t * 4) % 3)}`, t, 0.1);
+        this.caption(`<b style="color:#ff8f63">ANTHEM</b> is thinking${'.'.repeat(1 + Math.floor(t * 4) % 3)}`, t, 0.1);
       },
     });
     S.push({
@@ -626,7 +626,7 @@ export class Trailer {
           if (this.cmax) { this.sim.sell(this.cmax); fx().explosion(B[0], 0.8, B[2], 0xffd166, 1.6, true); fx().text(B[0], 2.4, B[2], '+1855', 'gold big'); }
           this.cmax = null; this.hit(0.3); this.flashA = 0.5; this.flashEl.style.background = '#ffe9a8'; this.cue('click');
         });
-        this.caption(t < 1.4 ? '<b style="color:#ff8f63">CLAUDE</b> used Computer Use' : "It's super effective.", t, t < 1.4 ? 0.1 : 1.4);
+        this.caption(t < 1.4 ? '<b style="color:#ff8f63">CALIFORNIA</b> used Pointer' : "It's super effective.", t, t < 1.4 ? 0.1 : 1.4);
       },
     });
     S.push({
