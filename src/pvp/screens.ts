@@ -260,7 +260,7 @@ export class PvpScreens {
       ${this.pickSlotFor ? `<div class="pick-hint">Tap a deck slot to put <b>${esc(TOWER_BY_ID[this.pickSlotFor].name)}</b> in it. <button class="link" data-act="pv-pick-cancel">Cancel</button></div>` : ''}
       <div class="deck5 slots-row">${p.deck.map((id, i) => `<div class="slotwrap ${this.pickSlotFor ? 'pick' : ''}" ${this.pickSlotFor ? `data-act="pv-slot" data-arg="${i}"` : ''}>${this.unitTile(id, false)}</div>`).join('')}</div>
       <nav class="tabs five">${(['all', ...FAMILIES] as const).map((f) => `<button class="tab ${this.filter === f ? 'on' : ''}" style="--fc:${f === 'all' ? '#dfe8ff' : FAMILY_INFO[f].css}" data-act="pv-filter" data-arg="${f}">${f === 'all' ? 'All' : FAMILY_INFO[f].name}</button>`).join('')}</nav>
-      <nav class="tabs roles">${(['all', 'damage', 'support'] as const).map((r) => `<button class="tab ${this.roleFilter === r ? 'on' : ''}" data-act="pv-role" data-arg="${r}">${r === 'all' ? 'Any role' : r === 'damage' ? `${ICON.swords} Damage` : `${ICON.shield} Support`}</button>`).join('')}</nav>
+      <nav class="tabs roles">${(['all', 'damage', 'support'] as const).map((r) => `<button class="tab ${this.roleFilter === r ? 'on' : ''}" style="--fc:#dfe8ff" data-act="pv-role" data-arg="${r}">${r === 'all' ? 'Any role' : r === 'damage' ? `${ICON.swords} Damage` : `${ICON.shield} Support`}</button>`).join('')}</nav>
       <p class="coll-note">${ownedN}/${PVP_UNITS.length} collected · ★ Signature units have a special capability</p>
       <div class="scroll"><div class="ugrid">${list.map((t) => this.unitTile(t.id, true)).join('')}</div></div>`);
   }
