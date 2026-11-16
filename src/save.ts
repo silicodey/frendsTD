@@ -65,6 +65,7 @@ export class Save {
   complete(levelId: number, stars: number): string[] {
     const before = this.totalStars();
     this.data.pvp.tokens += this.campaignTokens(levelId, stars);
+    this.data.pvp.mats.shards += 5 * Math.max(0, stars - (this.data.stars[levelId] ?? 0)); // new stars also pay Data Shards
     if (stars > (this.data.stars[levelId] ?? 0)) this.data.stars[levelId] = stars;
     delete this.data.fails[levelId];
     const after = this.totalStars();

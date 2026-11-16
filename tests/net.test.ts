@@ -11,7 +11,7 @@ import {
 import { startServer } from '../server/index';
 import { THEMES } from '../src/data/levels';
 
-const deck = STARTER_DECK.map((id) => ({ id, level: startLevel(id) + 2, talents: [-1, -1, -1, -1] }));
+const deck = STARTER_DECK.map((id) => ({ id, level: startLevel(id) + 2, talents: [-1, -1, -1] }));
 const setup = (name: string): PlayerSetup => ({ name, deck: deck.map((c) => ({ ...c })), elo: 0 });
 
 test('deterministic math matches Math closely', () => {
@@ -46,7 +46,8 @@ test('command validation rejects junk', () => {
   assert.equal(cleanDeck(deck.map((c, i) => (i === 0 ? { ...c, id: 'not_a_unit' } : c))), null);
   // talents are stripped where a unit has none or has not unlocked them
   const sig = cleanDeck([{ id: 'gem_ultra', level: 9, talents: [1, 1, 1, 1] }, ...deck.slice(1)])!;
-  assert.deepEqual(sig[0].talents, [1, -1, -1, -1]);
+  assert.deepEqual(sig[0].talents, [1, 1, -1], 'rows unlocked at 6 and 8, not 10');
+  assert.equal(cleanDeck([{ id: 'gem_ultra', level: 11, talents: [] }, ...deck.slice(1)]), null, 'levels stop at 10');
 });
 
 /** A scripted game: random but reproducible commands for both sides. */

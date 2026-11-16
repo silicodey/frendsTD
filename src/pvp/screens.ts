@@ -11,13 +11,14 @@ import {
   upgradeCost, usageLevel, usageTier, type CheckpointLoot,
 } from './economy';
 import type { DeckCard, PvpMatch } from './match';
-import { CRIT_DMG_MAX, CRIT_DMG_START, buildSpec } from './match';
+import { CRIT_DMG_MAX, CRIT_DMG_START, LEVEL_GROWTH, buildSpec } from './match';
 import {
   DECK_SIZE, arenaOf, buyOffer, critDamageOf, canUpgrade, chooseTalent, deckCards, limits, resetLimits, setDeckSlot, settleMatch, shopOffers, spendLimit, upgrade,
   type MatchResult,
 } from './profile';
 import { PVP_UNITS, RARITY_INFO, isSignature, rarityOf } from './roster';
 import { SIGNATURE_BY_ID, TALENT_LEVELS } from './signatures';
+import { SPECIALITIES } from './specialities';
 import { OnlineSession, defaultServer, inviteLink, normalizeServer, pendingResume, saveServer, type NetEvent } from '../net/client';
 import { cleanCode, cleanName } from '../net/protocol';
 
@@ -42,7 +43,7 @@ const RIVAL_NAMES = ['overfit_olga', 'TensorTom', 'gradient_greg', 'promptlord',
   'beam_search_bo', 'dropout_dan', 'softmax_sam', 'RLHF_rita', 'epoch_eve', 'quantized_q', 'hallucinate_hal', 'context_cleo', 'agent_ash', 'diffusion_di'];
 
 /** How hard a card hits at a level: rarity power × level scaling (what normalised battle damage is built from). */
-export const cardPower = (id: string, level: number) => RARITY_INFO[rarityOf(TOWER_BY_ID[id])].power * Math.pow(1.09, level - 1);
+export const cardPower = (id: string, level: number) => RARITY_INFO[rarityOf(TOWER_BY_ID[id])].power * Math.pow(LEVEL_GROWTH, level - 1);
 
 /** A ranked rival near your rating with a deck of matching strength (not just matching levels). */
 export function makeRival(elo: number, myDeck: DeckCard[], arena: number, rng: () => number, matchesPlayed: number) {
@@ -157,6 +158,11 @@ export class PvpScreens {
     const l = limits(p, Date.now());
     const prog = next ? (p.elo - arena.elo) / (next.elo - arena.elo) : 1;
     const deck = deckCards(p);
+    if (p.migrated) {
+      // once, after an update moved this save to the new level scale
+      delete p.migrated; this.save();
+      setTimeout(() => this.host.ui.say('Card levels now run 1–10 and units learn specialities. Your progress was converted, plus a welcome kit of materials.'), 400);
+    }
     this.screen('pvp-home', `
       <header class="bar"><button class="icon-btn" data-act="pv-title" aria-label="Back">${ICON.back}</button><h1>Ranked</h1>${this.wallet()}</header>
       <div class="scroll">
@@ -189,6 +195,14 @@ export class PvpScreens {
           <div class="meter"><i style="width:${Math.round((u.into / u.need) * 100)}%"></i></div>
           <p class="dim small">Usage grows as you upgrade units and play. Every level pays Tokens and 2 Resets, and resets your Limits.</p>
           <div class="usage-h crit-stat"><span>${ICON.bolt} Crit damage <b>${Math.round(critDamageOf(p) * 100)}%</b></span><i>+2% per card level-up</i></div>
+        </section>
+        <section class="mats">
+          <span class="eyebrow">Materials · for Breakthroughs</span>
+          <div class="mat-row">
+            <span class="mat" title="Data Shards">${ICON.shard}<b>${p.mats.shards}</b><i>Shards</i></span>
+            <span class="mat" title="Neural Cores">${ICON.ncore}<b>${p.mats.cores}</b><i>Cores</i></span>
+            ${FAMILIES.map((f) => `<span class="mat sig" style="--fc:${FAMILY_INFO[f].css}" title="${esc(FAMILY_INFO[f].name)} Sigils">${ICON.sigil}<b>${p.mats.sigils[f]}</b><i>${esc(FAMILY_INFO[f].name)}</i></span>`).join('')}
+          </div>
         </section>
         <p class="record">${p.wins}W · ${p.losses}L${p.draws ? ` · ${p.draws}D` : ''}${p.streak > 1 ? ` · ${p.streak} win streak` : ''} · best ${p.bestElo} Elo</p>
       </div>`);
@@ -240,7 +254,7 @@ export class PvpScreens {
     const p = this.p, def = TOWER_BY_ID[id], rarity = rarityOf(def), r = RARITY_INFO[rarity], fam = FAMILY_INFO[def.family];
     const c = p.cards[id];
     const level = c?.level ?? r.startLevel;
-    const spec = buildSpec({ id, level, talents: p.talents[id] ?? [-1, -1, -1, -1] });
+    const spec = buildSpec({ id, level, talents: p.talents[id] ?? [-1, -1, -1] }, { critDmg: critDamageOf(p) });
     const sig = SIGNATURE_BY_ID[id];
     const cost = c ? upgradeCost(id, c.level) : null;
     const state = canUpgrade(p, id);
@@ -255,14 +269,18 @@ export class PvpScreens {
     statRows.push(['Reach', area ? (def.kind === 'support' ? 'Adjacent units' : `${spec.def.range.toFixed(1)} tiles`) : 'Whole lane']);
     if (def.buff) statRows.push(['Aura', traits(spec.def).filter((x) => x.startsWith('Buff')).join(', ').replace(/Buff /g, '')]);
     const arena = ARENAS[arenaOfUnit(id)];
-    const talentRows = sig ? sig.talents.map((pair, tier) => {
+    const talentRows = (SPECIALITIES[id] ?? []).map((pair, tier) => {
       const L = TALENT_LEVELS[tier];
       const open = !!c && level >= L;
       const pick = p.talents[id]?.[tier] ?? -1;
       return `<div class="trow ${open ? '' : 'locked'}"><span class="tl">Lv ${L}</span>${pair.map((t, k) => `
         <button class="talent ${pick === k ? 'on' : ''}" ${open ? `data-act="pv-talent" data-arg="${id}:${tier}:${k}"` : 'disabled'}>
           <b>${esc(t.name)}</b><i>${esc(t.desc)}</i></button>`).join('')}</div>`;
-    }).join('') : '';
+    }).join('');
+    const famName = FAMILY_INFO[def.family].name;
+    const matCost = (x: { shards: number; sigils: number; cores: number }) => [
+      x.shards ? `${ICON.shard}${x.shards}` : '', x.sigils ? `${ICON.sigil}${x.sigils} ${esc(famName)}` : '', x.cores ? `${ICON.ncore}${x.cores}` : '',
+    ].filter(Boolean).join(' ');
     this.host.ui.openModal(`
       <div class="sheet unit-sheet" style="--fc:${fam.css};--fc2:${fam.css2};--rc:${r.css}">
         <button class="icon-btn close" data-act="close" aria-label="Close">${ICON.close}</button>
@@ -279,15 +297,20 @@ export class PvpScreens {
         <p class="desc">${esc(def.desc)}</p>
         <div class="kv">${statRows.map(([k, v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('')}</div>
         <div class="chips">${traits(spec.def).filter((x) => x !== 'Global range' && !x.startsWith('Buff')).slice(0, 6).map((x) => `<span class="chip">${esc(x)}</span>`).join('')}</div>
-        ${sig ? `<div class="ability"><div class="ab-h"><span class="eyebrow">Special capability</span><b>${esc(sig.ability.name)}</b></div><p>${esc(sig.ability.text(spec.ap))}</p><p class="dim small">Grows stronger with every level (+6% per level).</p></div>
-          <h3>Talents <span class="hint">pick one per row · changing costs ${TALENT_RESPEC_RESETS} Reset</span></h3><div class="talents">${talentRows}</div>` : ''}
+        ${sig ? `<div class="ability"><div class="ab-h"><span class="eyebrow">Special capability</span><b>${esc(sig.ability.name)}</b></div><p>${esc(sig.ability.text(spec.ap))}</p><p class="dim small">Grows stronger with every level (+9% per level).</p></div>` : ''}
+        ${talentRows ? `<h3>Specialities <span class="hint">learned at Breakthroughs (Lv 6 · 8 · 10) · pick one per row · changing costs ${TALENT_RESPEC_RESETS} Reset</span></h3><div class="talents">${talentRows}</div>` : ''}
         ${c ? `<div class="us-actions">
           ${cost ? `<div class="wbar"><span>${ICON.weights} Weights</span><div class="meter"><i style="width:${Math.round(Math.min(1, c.weights / cost.weights) * 100)}%"></i></div><b>${c.weights}/${cost.weights}</b></div>` : '<div class="wbar max">Max level</div>'}
           <div class="row2">
-            ${cost ? `<button class="btn primary wide ${state === 'ok' ? '' : 'disabled'}" data-act="pv-upgrade" data-arg="${id}">${ICON.up}<span>Upgrade</span><em>${ICON.token}${fmt(cost.tokens)}</em></button>` : ''}
+            ${cost ? `<button class="btn primary wide ${state === 'ok' ? '' : 'disabled'}" data-act="pv-upgrade" data-arg="${id}">${ICON.up}<span>${cost.breakthrough ? 'Breakthrough' : 'Upgrade'}</span><em>${ICON.token}${fmt(cost.tokens)}</em></button>` : ''}
             <button class="btn wide ${inDeck ? 'disabled' : ''}" data-act="pv-use" data-arg="${id}">${inDeck ? 'In deck' : 'Use in deck'}</button>
           </div>
-          ${state === 'weights' ? `<p class="dim small center">Needs ${cost!.weights - c.weights} more Weights. Win battles to open Checkpoints, or check the Shop.</p>` : state === 'tokens' ? `<p class="dim small center">Needs ${fmt(cost!.tokens - p.tokens)} more Tokens.</p>` : ''}
+          ${cost?.breakthrough ? `<p class="bt-cost">Breakthrough to Lv ${c.level + 1} also needs ${matCost(cost)} and teaches a speciality.</p>` : ''}
+          ${state === 'weights' ? `<p class="dim small center">Needs ${cost!.weights - c.weights} more Weights. Win battles to open Checkpoints, or check the Shop.</p>`
+            : state === 'tokens' ? `<p class="dim small center">Needs ${fmt(cost!.tokens - p.tokens)} more Tokens.</p>`
+            : state === 'shards' ? `<p class="dim small center">Needs ${cost!.shards - p.mats.shards} more Data Shards: every match and campaign star pays some, and the Shop sells them.</p>`
+            : state === 'sigils' ? `<p class="dim small center">Needs ${cost!.sigils - p.mats.sigils[def.family]} more ${esc(famName)} Sigils: play ${esc(famName)} units (double during its featured week).</p>`
+            : state === 'cores' ? `<p class="dim small center">Needs ${cost!.cores - p.mats.cores} more Neural Cores: Legendary Checkpoints, 10 wins a week, arena promotions, or one a week in the Shop.</p>` : ''}
         </div>` : ''}
       </div>`);
     this.host.renderNow();

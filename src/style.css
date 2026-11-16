@@ -600,3 +600,12 @@ svg { display: block; }
 .tabs.roles { grid-template-columns: repeat(3, 1fr); margin-top: 6px; }
 .tabs.roles .tab { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 34px; }
 .tabs.five .tab { font-size: 11px; letter-spacing: 0.02em; padding: 0 2px; }
+.bt-cost { margin: 2px 0 0; padding: 8px 10px; border-radius: 10px; background: rgba(255, 209, 102, 0.08); border: 1px solid rgba(255, 209, 102, 0.3); font: 500 12.5px/1.4 var(--display); color: #ffe7a8; text-align: center; }
+.bt-cost svg { vertical-align: -2px; margin: 0 1px 0 4px; }
+.mats { margin-top: 10px; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.mat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.mat { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 6px; align-items: center; padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--line); }
+.mat svg { grid-row: 1 / 3; font-size: 18px; color: #9fe8ff; }
+.mat.sig svg { color: var(--fc); }
+.mat b { font: 700 14px/1 var(--display); font-variant-numeric: tabular-nums; }
+.mat i { font: 500 10px/1.2 var(--display); font-style: normal; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

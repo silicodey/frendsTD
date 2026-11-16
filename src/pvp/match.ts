@@ -4,7 +4,8 @@ import { mulberry32 } from '../data/levels';
 import { CELL_BLOCKED, CELL_FREE, CELL_VOID, Sim, type Enemy, type SimEvent, type Tower } from '../sim/sim';
 import type { TowerStats } from '../data/towers';
 import { RARITY_INFO, rarityOf } from './roster';
-import { SIGNATURE_BY_ID, abilityPower, talentMods, type Signature, type UnitMods } from './signatures';
+import { SIGNATURE_BY_ID, abilityPower, type Signature, type UnitMods } from './signatures';
+import { specialityMods } from './specialities';
 import { CAL } from './calibration';
 import { pickN } from '../net/protocol';
 import { hypot, pow } from '../sim/dmath';
@@ -56,6 +57,8 @@ export interface PlayerSetup { name: string; deck: DeckCard[]; elo?: number; cri
 
 /** Crit chance of each Damage unit (Support units don't crit). Precision units crit more often. */
 export const BASE_CRIT = 0.08;
+/** Card level scaling: ×1.14 per level, so level 10 hits about 3.25× as hard as level 1. */
+export const LEVEL_GROWTH = 1.14;
 export const CRIT_DMG_START = 1.5, CRIT_DMG_MAX = 3.5;
 const PRECISION_CRIT: Record<string, number> = { cx_debugger: 0.15, cl_computer: 0.18, gem_deepthink: 0.15, cx_refactor: 0.12, gk_heavy: 0.2, gk_unhinged: 0.1 };
 export const critChanceOf = (id: string) => (dutyOf(TOWER_BY_ID[id]) === 'damage' ? PRECISION_CRIT[id] ?? BASE_CRIT : 0);
@@ -78,7 +81,7 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   const base = TOWER_BY_ID[card.id];
   const rarity = rarityOf(base);
   const sig = SIGNATURE_BY_ID[card.id];
-  const mods = talentMods(card.id, card.talents, card.level);
+  const mods = specialityMods(card.id, card.talents, card.level);
   const flags = new Set(mods.flags ?? []);
   const d: TowerDef = { ...base };
   const cal = opts.cal ?? CAL[card.id] ?? 1;
@@ -105,6 +108,7 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   else if (mods.dot) d.dot = [d.dmg * mods.dot[0], mods.dot[1]];
   if (mods.drones) d.drones = (base.drones ?? 0) + mods.drones;
   if (flags.has('admin')) { d.pierce = 1; d.shieldMult = 3; }
+  if (flags.has('auraVuln')) d.vuln = (d.vuln ?? 0) + 0.1;
   if (base.buff || mods.buffDmg || mods.buffRate || mods.buffCrit) {
     d.buff = { ...base.buff };
     if (mods.buffDmg) d.buff.dmg = (d.buff.dmg ?? 0) + mods.buffDmg;
@@ -120,7 +124,7 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   }
   d.noAir = false; // there are no flyers in duels
   const start = RARITY_INFO[rarity].startLevel;
-  return { card, base, def: d, mods, flags, sig, ap: abilityPower(card.level, start) * (1 + (mods.abilityPower ?? 0)), levelMult: pow(1.09, card.level - 1) };
+  return { card, base, def: d, mods, flags, sig, ap: abilityPower(card.level, start) * (1 + (mods.abilityPower ?? 0)), levelMult: pow(LEVEL_GROWTH, card.level - 1) };
 }
 
 export class PvpMatch {

@@ -12,6 +12,7 @@ import { HEARTS, MAX_POWER, PvpMatch, type MatchEvent, type PlayerSetup } from '
 import { RARITY_INFO, rarityOf } from './roster';
 import { dutyOf, subroleOf, traits } from '../data/towers';
 import { SIGNATURE_BY_ID } from './signatures';
+import { chosenSpecialities } from './specialities';
 import type { OnlineSession } from '../net/client';
 import { DT, HASH_EVERY, Lockstep, TICK_MS, applyCmd, matchHash, type Cmd } from '../net/protocol';
 
@@ -272,7 +273,7 @@ export class Duel {
     const powerLine = !Number.isFinite(cost) ? 'Power-up maxed (Lv 5).'
       : !units.length ? `Summon one first, then power-ups cost ${cost} compute.`
       : `Next power-up (${cost} compute): +25% damage for every ${def.name} on the board${sig ? ' and a stronger special capability' : ''}.`;
-    const picks = sig ? sig.talents.map((pair, tier) => pair[spec.card.talents[tier]]).filter(Boolean) : [];
+    const picks = chosenSpecialities(def.id, spec.card.talents, spec.card.level);
     const offline = !this.net;
     if (offline) this.paused = true;
     this.host.ui.openModal(`<div class="sheet unit-sheet card-info" data-noclose style="--fc:${fam.css};--fc2:${fam.css2};--rc:${r.css}">

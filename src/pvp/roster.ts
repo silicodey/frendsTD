@@ -23,9 +23,9 @@ export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export const RARITIES: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 export const RARITY_INFO: Record<Rarity, { name: string; css: string; color: number; startLevel: number; power: number }> = {
   common: { name: 'Common', css: '#b8c4d8', color: 0xb8c4d8, startLevel: 1, power: 1.0 },
-  rare: { name: 'Rare', css: '#4fa8ff', color: 0x4fa8ff, startLevel: 3, power: 1.12 },
-  epic: { name: 'Epic', css: '#c56bff', color: 0xc56bff, startLevel: 5, power: 1.25 },
-  legendary: { name: 'Legendary', css: '#ffb83d', color: 0xffb83d, startLevel: 7, power: 1.4 },
+  rare: { name: 'Rare', css: '#4fa8ff', color: 0x4fa8ff, startLevel: 2, power: 1.12 },
+  epic: { name: 'Epic', css: '#c56bff', color: 0xc56bff, startLevel: 4, power: 1.25 },
+  legendary: { name: 'Legendary', css: '#ffb83d', color: 0xffb83d, startLevel: 5, power: 1.4 },
 };
 
 export function rarityOfTier(tier: number): Rarity {

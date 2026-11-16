@@ -1,7 +1,6 @@
 /**
- * Signature units: the top three of each family (see roster.ts) get a special capability and a talent
- * tree. Talents unlock at card levels 9, 11, 13 and 15; at each one you pick one of two. A choice is
- * free the first time and costs Resets to change.
+ * Signature units: the top three of each class (see roster.ts) get a special capability. Their talent
+ * rows feed their specialities (specialities.ts): row 1 at level 6, row 4 at level 10.
  *
  * Everything a talent does is expressed as modifiers (UnitMods) so the match engine applies them all
  * the same way; `flags` switch on the few behaviours that need their own code.
@@ -44,7 +43,8 @@ export interface Ability {
 
 export interface Signature { unit: string; ability: Ability; talents: [Talent, Talent][] }
 
-export const TALENT_LEVELS = [9, 11, 13, 15];
+/** Card levels whose Breakthrough teaches a speciality (see specialities.ts). */
+export const TALENT_LEVELS = [6, 8, 10];
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const T = (id: string, name: string, desc: string, mods: UnitMods): Talent => ({ id, name, desc, mods });
@@ -180,23 +180,4 @@ export const SIGNATURE_BY_ID: Record<string, Signature> = Object.fromEntries(SIG
 export const isSignatureId = (id: string) => !!SIGNATURE_BY_ID[id];
 
 /** Ability strength at a card level: +6% per level above the rarity's starting level. */
-export const abilityPower = (level: number, startLevel: number) => 1 + 0.06 * Math.max(0, level - startLevel);
-
-/** Combine the chosen talents (one index per unlocked tier) into one set of modifiers. */
-export function talentMods(unit: string, picks: number[], level: number): UnitMods {
-  const sig = SIGNATURE_BY_ID[unit];
-  const out: UnitMods = { flags: [] };
-  if (!sig) return out;
-  sig.talents.forEach((pair, tier) => {
-    const pick = picks[tier];
-    if (level < TALENT_LEVELS[tier] || (pick !== 0 && pick !== 1)) return;
-    const m = pair[pick].mods;
-    for (const [k, v] of Object.entries(m) as [keyof UnitMods, unknown][]) {
-      if (k === 'flags') out.flags!.push(...(v as string[]));
-      else if (Array.isArray(v)) { const cur = (out[k] as [number, number] | undefined) ?? [0, 0]; (out as Record<string, unknown>)[k] = [cur[0] + v[0], cur[1] + v[1]]; }
-      else if (k === 'chainKeep') out.chainKeep = v as number;
-      else (out as Record<string, number>)[k] = ((out as Record<string, number>)[k] ?? 0) + (v as number);
-    }
-  });
-  return out;
-}
+export const abilityPower = (level: number, startLevel: number) => 1 + 0.09 * Math.max(0, level - startLevel);

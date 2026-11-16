@@ -6,7 +6,9 @@ import { TOWERS, TOWER_BY_ID, approxDps } from '../src/data/towers';
 import { mulberry32 } from '../src/data/levels';
 import { FAMILIES } from '../src/data/types';
 import { PVP_UNITS, SIGNATURE_IDS, RARITY_INFO, rarityOf, selectRoster, PER_FAMILY, SIGNATURES_PER_FAMILY } from '../src/pvp/roster';
-import { SIGNATURES, SIGNATURE_BY_ID, TALENT_LEVELS, talentMods } from '../src/pvp/signatures';
+import { SIGNATURES, SIGNATURE_BY_ID, TALENT_LEVELS } from '../src/pvp/signatures';
+import { SPECIALITIES, specialityMods } from '../src/pvp/specialities';
+import { dutyOf } from '../src/data/towers';
 import {
   ARENAS, LIMIT_MAX, LIMIT_REGEN_S, MAX_CARD_LEVEL, TOKENS_TABLE, WEIGHTS_TABLE, arenaFor, dailyOffers, eloDelta, nextLimitIn, openCheckpoint,
   startLevel, tickLimits, unitsUpTo, upgradeCost, usageLevel, usageToNext,
@@ -52,21 +54,32 @@ test('signatures: every signature unit has an ability and 4 talent pairs, and no
   assert.equal(SIGNATURES.length, 12);
   for (const s of SIGNATURES) {
     assert.ok(SIGNATURE_IDS.has(s.unit), `${s.unit} is a selected signature`);
-    assert.equal(s.talents.length, TALENT_LEVELS.length);
+    assert.equal(s.talents.length, 4);
     for (const pair of s.talents) assert.equal(pair.length, 2);
     assert.ok(s.ability.text(1).length > 10);
   }
   for (const id of SIGNATURE_IDS) assert.ok(SIGNATURE_BY_ID[id], `${id} has a signature entry`);
 });
 
-test('talents only apply once their level is reached', () => {
-  const lo = talentMods('gem_ultra', [0, 0, 0, 0], 10);
-  assert.equal(lo.targets, 1); // level 9 talent
-  assert.equal(lo.abilityCd, undefined); // level 11 talent not yet
-  const hi = talentMods('gem_ultra', [1, 1, 1, 1], 15);
+test('specialities: every duel unit has three rows of two, learned at levels 6, 8 and 10', () => {
+  assert.deepEqual(TALENT_LEVELS, [6, 8, 10]);
+  for (const t of PVP_UNITS) {
+    const rows = SPECIALITIES[t.id];
+    assert.ok(rows && rows.length === 3, t.id);
+    for (const pair of rows) assert.equal(pair.length, 2);
+  }
+  const lo = specialityMods('gem_ultra', [0, 0, 0], 7);
+  assert.equal(lo.targets, 1); // level 6 row
+  assert.equal(lo.crit, undefined); // level 8 row not yet
+  const hi = specialityMods('gem_ultra', [1, 0, 1], 10);
   assert.equal(hi.dmg, 0.25);
-  assert.ok(hi.flags!.includes('burstSlow') && hi.flags!.includes('burstBurn'));
-  assert.deepEqual(talentMods('gem_flash', [0, 0, 0, 0], 15), { flags: [] });
+  assert.equal(hi.crit, 0.14, 'Keen Edge at level 8');
+  assert.ok(hi.flags!.includes('burstBurn'), 'Afterglow capstone at level 10');
+  // every Damage unit chooses between crit and raw damage at level 8; supports get Ward
+  for (const t of PVP_UNITS) {
+    const mid = SPECIALITIES[t.id][1].map((x) => x.name);
+    assert.ok(dutyOf(t) === 'damage' ? mid.includes('Keen Edge') && mid.includes('Overclock') : mid.includes('Ward'), `${t.id}: ${mid}`);
+  }
 });
 
 test('battle specs are normalised: rarer and higher level hits harder, nothing is NaN', () => {
@@ -151,36 +164,52 @@ test('new profiles start valid; sanitize repairs damage', () => {
   for (const id of STARTER_DECK) assert.ok(fixed.cards[id]);
 });
 
-test('upgrading spends Weights and Tokens, pays Usage, stops at 15', () => {
+test('upgrading spends Weights and Tokens, Breakthroughs need materials, stops at 10', () => {
   const p = newProfile(T0);
   assert.equal(canUpgrade(p, 'gem_flash'), 'weights');
-  p.cards.gem_flash.weights = 100000; p.tokens = 1e7;
+  p.cards.gem_flash.weights = 100000; p.tokens = 1e7; p.mats.shards = 0;
   const r = upgrade(p, 'gem_flash', T0)!;
   assert.equal(r.level, 2);
   assert.equal(p.cards.gem_flash.weights, 100000 - WEIGHTS_TABLE.common[0]);
   assert.equal(p.tokens, 1e7 - TOKENS_TABLE[2]);
   assert.ok(p.usage > 0);
   while (upgrade(p, 'gem_flash', T0));
+  assert.equal(p.cards.gem_flash.level, 5, 'level 6 is a Breakthrough');
+  assert.equal(canUpgrade(p, 'gem_flash'), 'shards');
+  p.mats.shards = 1000;
+  upgrade(p, 'gem_flash', T0); upgrade(p, 'gem_flash', T0);
+  assert.equal(p.cards.gem_flash.level, 7);
+  assert.equal(canUpgrade(p, 'gem_flash'), 'sigils', 'level 8 needs London Sigils');
+  p.mats.sigils.gemini = 100;
+  upgrade(p, 'gem_flash', T0); upgrade(p, 'gem_flash', T0);
+  assert.equal(canUpgrade(p, 'gem_flash'), 'cores', 'level 10 needs Neural Cores');
+  p.mats.cores = 2;
+  const shards = p.mats.shards;
+  upgrade(p, 'gem_flash', T0);
+  assert.equal(p.mats.cores, 0);
+  assert.equal(p.mats.shards, shards - 150);
   assert.equal(p.cards.gem_flash.level, MAX_CARD_LEVEL);
   assert.equal(canUpgrade(p, 'gem_flash'), 'max');
   assert.ok(p.resets > 5, 'Usage levels paid Resets');
 });
 
-test('talents: locked below level, first pick free, changes cost a Reset', () => {
+test('specialities: locked below their Breakthrough, first pick free, changes cost a Reset, any duel unit', () => {
   const p = newProfile(T0);
-  grantWeights(p, 'gem_ultra', 1);
+  grantWeights(p, 'gem_ultra', 1); // epic, starts at level 4
   assert.equal(chooseTalent(p, 'gem_ultra', 0, 1), 'locked');
-  p.cards.gem_ultra.level = 9;
+  p.cards.gem_ultra.level = 6;
   const resets = p.resets;
   assert.equal(chooseTalent(p, 'gem_ultra', 0, 1), 'ok');
   assert.equal(p.resets, resets);
   assert.equal(chooseTalent(p, 'gem_ultra', 0, 1), 'same');
   assert.equal(chooseTalent(p, 'gem_ultra', 0, 0), 'ok');
   assert.equal(p.resets, resets - 1);
-  assert.equal(chooseTalent(p, 'gem_ultra', 1, 0), 'locked', 'level 11 tier still locked');
+  assert.equal(chooseTalent(p, 'gem_ultra', 1, 0), 'locked', 'level 8 row still locked');
   p.resets = 0;
   assert.equal(chooseTalent(p, 'gem_ultra', 0, 1), 'resets');
-  assert.equal(chooseTalent(p, 'gem_flash', 0, 0), 'locked', 'not a signature');
+  p.cards.gem_flash.level = 6;
+  assert.equal(chooseTalent(p, 'gem_flash', 0, 0), 'ok', 'non-signature units have specialities too');
+  assert.equal(chooseTalent(p, 'gem_flash', 3, 0), 'locked', 'no fourth row');
 });
 
 test('deck slots swap instead of duplicating', () => {
@@ -352,7 +381,7 @@ test('fairness: mirrored AI decks win about equally', () => {
 });
 
 // ------------------------------------------------------------------ abilities
-const sigMatch = (id: string, talents = [-1, -1, -1, -1], level = 15) =>
+const sigMatch = (id: string, talents = [-1, -1, -1], level = 10) =>
   new PvpMatch({ name: 'A', deck: [{ id, level, talents }, ...deckOf(COMMONS.slice(0, 4), level)] }, { name: 'B', deck: deckOf(COMMONS) }, 2);
 
 test('Deep Think rails mark enemies for extra damage', () => {
@@ -529,4 +558,50 @@ test('bosses can be beaten by casual play (calibration guard)', async () => {
   }
   assert.ok(titan > 0 && titanKilled / titan >= 0.9, `wave 8 Titan killed ${titanKilled}/${titan}`);
   assert.ok(maxi > 0 && maxiKilled / maxi >= 0.6, `wave 12 Maximizer killed ${maxiKilled}/${maxi}`);
+});
+
+test('card tables: levels 1–10, legendary level-ups cost 3/3/4/4/5 cards', () => {
+  assert.equal(MAX_CARD_LEVEL, 10);
+  assert.deepEqual(WEIGHTS_TABLE.legendary, [3, 3, 4, 4, 5]);
+  assert.equal(startLevel('gk_heavy'), 5);
+  for (let L = 5; L < 10; L++) assert.ok(upgradeCost('gk_heavy', L)!.weights === [3, 3, 4, 4, 5][L - 5]);
+  // Breakthroughs at 6, 8, 10 cost materials; other levels don't
+  for (let L = 1; L < 10; L++) {
+    const c = upgradeCost('gem_flash', L)!;
+    assert.equal(c.breakthrough, [6, 8, 10].includes(L + 1), `to L${L + 1}`);
+    assert.equal(c.shards > 0, c.breakthrough);
+  }
+});
+
+test('old saves move to the 1–10 scale, get a welcome kit, and refund units that left the roster', async () => {
+  const { sanitize, migrateLevel } = await import('../src/pvp/profile');
+  const old = { ...newProfile(T0), v: 1 } as unknown as Parameters<typeof sanitize>[0];
+  old.cards.gem_flash.level = 15; old.cards.cl_sonnet.level = 8;
+  old.cards.gem_constellation = { level: 9, weights: 10 }; // no longer a duel unit
+  old.talents = { gem_ultra: [1, 0, -1, -1] };
+  const tokens = old.tokens;
+  const p = sanitize(old, T0);
+  assert.equal(p.v, 2);
+  assert.equal(p.cards.gem_flash.level, 10);
+  assert.equal(p.cards.cl_sonnet.level, migrateLevel('cl_sonnet', 8));
+  assert.ok(!p.cards.gem_constellation);
+  assert.ok(p.tokens > tokens, 'refunded');
+  assert.deepEqual(p.talents, {});
+  assert.ok(p.mats.shards >= 50 && p.mats.cores >= 1);
+  assert.equal(p.migrated, true);
+  // and it only happens once
+  const again = sanitize(p, T0);
+  assert.equal(again.cards.gem_flash.level, 10);
+});
+
+test('ranked matches pay Data Shards and Sigils (doubled for the featured class); 10 weekly wins pay a Neural Core', () => {
+  const p = newProfile(T0);
+  const s0 = p.mats.shards;
+  const r = settleMatch(p, 1, 0, () => 0.5, T0, 'gemini');
+  assert.equal(r.mats.shards, 6);
+  assert.equal(p.mats.shards >= s0 + 6, true);
+  assert.equal(r.mats.sigils.gemini, 4, 'featured: 2 × 2');
+  assert.equal(r.mats.sigils.claude, 2);
+  for (let i = 0; i < 9; i++) settleMatch(p, 1, 0, () => 0.5, T0, null);
+  assert.ok(p.mats.cores >= 1);
 });

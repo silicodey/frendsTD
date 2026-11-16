@@ -1,6 +1,7 @@
 import { TOWER_BY_ID } from '../data/towers';
 import { mulberry32 } from '../data/levels';
 import { PVP_UNITS, RARITY_INFO, rarityOf, type Rarity } from './roster';
+import type { Family } from '../data/types';
 
 /**
  * The account economy. Rush Royale's structure, renamed for this world:
@@ -11,34 +12,56 @@ import { PVP_UNITS, RARITY_INFO, rarityOf, type Rarity } from './roster';
  *   Resets   premium currency: instantly reset your Limits, change a talent, or buy Tokens
  *   Usage    account XP from upgrades and battles; levels up your Usage tier (Hobby → Builder → Studio → Scale → Hyperscale)
  *   Elo      rating; climbing it moves you through arenas, which unlock rarer units
+ *
+ * Materials (for Breakthroughs, the level-ups to 6, 8 and 10 that each teach a unit a speciality):
+ *   Data Shards   common: every match, the campaign, Checkpoints, the Shop
+ *   Class Sigils  one kind per class: earned by playing that class's units; doubled for the featured class
+ *   Neural Cores  rare: Legendary/Epic Checkpoints, weekly wins, arena promotions, one a week in the Shop
  */
 
-export const MAX_CARD_LEVEL = 15;
+export const MAX_CARD_LEVEL = 10;
 
-/** Weights needed for each level-up, counted from the rarity's starting level. */
+/** Cards (Weights) needed for each level-up, counted from the rarity's starting level (C1, R2, E4, L5). */
 export const WEIGHTS_TABLE: Record<Rarity, number[]> = {
-  common: [2, 4, 10, 20, 50, 100, 200, 400, 800, 1000, 2000, 3000, 5000, 8000],
-  rare: [2, 4, 10, 20, 50, 100, 200, 400, 600, 800, 1200, 1600],
-  epic: [2, 4, 10, 20, 40, 80, 150, 250, 400, 600],
-  legendary: [1, 2, 4, 8, 15, 25, 40, 60],
+  common: [5, 10, 20, 40, 80, 150, 300, 500, 800], // → L2 … L10
+  rare: [4, 8, 16, 30, 60, 120, 200, 350], // → L3 … L10
+  epic: [3, 6, 12, 25, 50, 90], // → L5 … L10
+  legendary: [3, 3, 4, 4, 5], // → L6, L7 (3 each), L8, L9 (4 each), L10 (5)
 };
 
 /** Tokens to reach each level (index = target level). */
-export const TOKENS_TABLE = [0, 0, 10, 25, 50, 100, 200, 400, 800, 1600, 3200, 5000, 8000, 12000, 18000, 25000];
+export const TOKENS_TABLE = [0, 0, 20, 50, 100, 200, 400, 800, 1600, 3200, 5000];
+
+/** Levels that are Breakthroughs: they also cost materials, and each teaches a speciality. */
+export const BREAKTHROUGHS = [6, 8, 10];
+
+export interface Materials { shards: number; cores: number; sigils: Record<Family, number> }
+export const noMaterials = (): Materials => ({ shards: 0, cores: 0, sigils: { gemini: 0, claude: 0, codex: 0, grok: 0 } });
+
+/** Extra materials for a Breakthrough, by rarity. */
+export const BREAKTHROUGH_COST: Record<Rarity, Record<number, { shards: number; sigils: number; cores: number }>> = {
+  common: { 6: { shards: 20, sigils: 0, cores: 0 }, 8: { shards: 60, sigils: 10, cores: 0 }, 10: { shards: 150, sigils: 30, cores: 2 } },
+  rare: { 6: { shards: 25, sigils: 0, cores: 0 }, 8: { shards: 70, sigils: 12, cores: 0 }, 10: { shards: 170, sigils: 35, cores: 3 } },
+  epic: { 6: { shards: 30, sigils: 0, cores: 0 }, 8: { shards: 80, sigils: 15, cores: 1 }, 10: { shards: 200, sigils: 40, cores: 4 } },
+  legendary: { 6: { shards: 40, sigils: 0, cores: 0 }, 8: { shards: 100, sigils: 20, cores: 1 }, 10: { shards: 250, sigils: 50, cores: 5 } },
+};
 
 export function startLevel(id: string) { return RARITY_INFO[rarityOf(TOWER_BY_ID[id])].startLevel; }
 
-export function upgradeCost(id: string, level: number): { weights: number; tokens: number } | null {
+export interface UpgradeCost { weights: number; tokens: number; shards: number; sigils: number; cores: number; family: Family; breakthrough: boolean }
+
+export function upgradeCost(id: string, level: number): UpgradeCost | null {
   if (level >= MAX_CARD_LEVEL) return null;
-  const r = rarityOf(TOWER_BY_ID[id]);
+  const def = TOWER_BY_ID[id], r = rarityOf(def);
   const step = level - RARITY_INFO[r].startLevel;
-  return { weights: WEIGHTS_TABLE[r][step], tokens: TOKENS_TABLE[level + 1] };
+  const bt = BREAKTHROUGH_COST[r][level + 1];
+  return { weights: WEIGHTS_TABLE[r][step], tokens: TOKENS_TABLE[level + 1], shards: bt?.shards ?? 0, sigils: bt?.sigils ?? 0, cores: bt?.cores ?? 0, family: def.family, breakthrough: !!bt };
 }
 
 /** Usage XP for reaching a card level (rarer and higher pays more). */
 export function upgradeUsage(id: string, newLevel: number) {
   const r = rarityOf(TOWER_BY_ID[id]);
-  return Math.round(newLevel * newLevel * 1.5 * ({ common: 1, rare: 1.3, epic: 1.7, legendary: 2.2 } as const)[r]);
+  return Math.round(newLevel * newLevel * 3 * ({ common: 1, rare: 1.3, epic: 1.7, legendary: 2.2 } as const)[r]);
 }
 
 // ------------------------------------------------------------------ Usage tiers
@@ -113,7 +136,7 @@ export function rollCheckpoint(rng: () => number, winsSinceEpic: number): Checkp
   return r < 0.01 ? 'legendary' : r < 0.08 ? 'epic' : r < 0.3 ? 'rare' : 'common';
 }
 
-export interface CheckpointLoot { kind: CheckpointKind; tokens: number; weights: { id: string; n: number }[] }
+export interface CheckpointLoot { kind: CheckpointKind; tokens: number; weights: { id: string; n: number }[]; mats?: Materials }
 
 /** Fill a Checkpoint from the units available in your arena. Arenas multiply the contents. */
 export function openCheckpoint(kind: CheckpointKind, arena: number, rng: () => number): CheckpointLoot {
@@ -141,7 +164,7 @@ export function openCheckpoint(kind: CheckpointKind, arena: number, rng: () => n
   // convert "down" payouts (locked rarities) into extra Tokens
   let tokens = Math.round(info.tokens * scale);
   for (const [k, n] of [...out]) if (k.startsWith('__down')) { tokens += n * 25 * Number(k.slice(6)); out.delete(k); }
-  return { kind, tokens, weights: [...out].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })) };
+  return { kind, tokens, weights: [...out].filter(([, n]) => n > 0).map(([id, n]) => ({ id, n })), mats: checkpointMaterials(kind, rng) };
 }
 
 // ------------------------------------------------------------------ Shop
@@ -165,3 +188,33 @@ export function dailyOffers(day: number, arena: number): Offer[] {
 
 export const TALENT_RESPEC_RESETS = 1;
 export const dayNumber = (now: number) => Math.floor(now / 86400000);
+/** Weeks run Monday 00:00 UTC to Monday (1 Jan 1970 was a Thursday). */
+export const weekNumber = (now: number) => Math.floor((dayNumber(now) + 3) / 7);
+export const weekStart = (week: number) => (week * 7 - 3) * 86400000;
+
+// ------------------------------------------------------------------ material rewards
+export const FAMILY_KEYS: Family[] = ['gemini', 'claude', 'codex', 'grok'];
+/** Materials from one ranked match: Data Shards always, Sigils for each class you played (×2 for the featured class). */
+export function matchMaterials(score: number, deckFamilies: Family[], featured: Family | null): Materials {
+  const m = noMaterials();
+  m.shards = score === 1 ? 6 : score === 0.5 ? 4 : 2;
+  for (const f of new Set(deckFamilies)) m.sigils[f] += (score === 1 ? 2 : 1) * (f === featured ? 2 : 1);
+  return m;
+}
+export const WEEKLY_CORE_WINS = 10;
+export const FRIEND_SHARDS = 2, FRIEND_SHARDS_DAILY_CAP = 20;
+
+/** Materials inside a Checkpoint. */
+export function checkpointMaterials(kind: CheckpointKind, rng: () => number): Materials {
+  const m = noMaterials();
+  const fam = () => FAMILY_KEYS[Math.floor(rng() * FAMILY_KEYS.length)];
+  if (kind === 'common') m.shards = 8;
+  else if (kind === 'rare') { m.shards = 20; m.sigils[fam()] += 3; }
+  else if (kind === 'epic') { m.shards = 50; m.sigils[fam()] += 8; if (rng() < 0.15) m.cores = 1; }
+  else { m.shards = 120; m.sigils[fam()] += 15; m.cores = 1 + (rng() < 0.5 ? 1 : 0); }
+  return m;
+}
+export function addMaterials(into: Materials, add: Materials) {
+  into.shards += add.shards; into.cores += add.cores;
+  for (const f of FAMILY_KEYS) into.sigils[f] += add.sigils[f];
+}

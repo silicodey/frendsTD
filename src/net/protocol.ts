@@ -1,7 +1,8 @@
 import { MAX_CARD_LEVEL, startLevel } from '../pvp/economy';
 import type { DeckCard, PlayerSetup, PvpMatch } from '../pvp/match';
 import { PVP_IDS } from '../pvp/roster';
-import { TALENT_LEVELS, isSignatureId } from '../pvp/signatures';
+import { TALENT_LEVELS } from '../pvp/signatures';
+import { hasSpecialities } from '../pvp/specialities';
 
 /**
  * Online duels: deterministic lockstep with the server as clock, relay and referee.
@@ -15,7 +16,7 @@ import { TALENT_LEVELS, isSignatureId } from '../pvp/signatures';
  */
 
 /** Bump whenever game rules, balance or this protocol change: mismatched clients are turned away. */
-export const PROTO = 3;
+export const PROTO = 4;
 export const TICK_HZ = 60;
 export const TICK_MS = 1000 / TICK_HZ;
 export const DT = 1 / TICK_HZ;
@@ -103,7 +104,7 @@ export function cleanDeck(x: unknown): DeckCard[] | null {
     const level = int(o.level, startLevel(o.id), MAX_CARD_LEVEL);
     if (level === null) return null;
     const raw = Array.isArray(o.talents) ? o.talents : [];
-    const talents = TALENT_LEVELS.map((L, i) => (isSignatureId(o.id as string) && level >= L && (raw[i] === 0 || raw[i] === 1) ? (raw[i] as number) : -1));
+    const talents = TALENT_LEVELS.map((L, i) => (hasSpecialities(o.id as string) && level >= L && (raw[i] === 0 || raw[i] === 1) ? (raw[i] as number) : -1));
     out.push({ id: o.id, level, talents });
   }
   return out;
