@@ -21,7 +21,7 @@ import { PvpMatch, type DeckCard } from '../src/pvp/match';
 import { THEMES } from '../src/data/levels';
 import {
   COUNTDOWN_MS, HASH_EVERY, INPUT_DELAY, Lockstep, PROTO, RECONNECT_GRACE_MS, TICK_MS,
-  cleanCmd, cleanCode, cleanDeck, cleanName, matchHash, randomCode,
+  cleanCmd, cleanCode, cleanCrit, cleanDeck, cleanName, matchHash, randomCode,
   type ClientMsg, type LobbyPlayer, type ServerMsg, type StartInfo, type TimedCmd,
 } from '../src/net/protocol';
 
@@ -30,7 +30,7 @@ const CMD_BURST = 20; // commands per player per second
 
 interface Seat {
   conn: Conn | null;
-  name: string; deck: DeckCard[]; ready: boolean; token: string;
+  name: string; deck: DeckCard[]; critDmg: number; ready: boolean; token: string;
   droppedAt: number; // 0 while connected
   forfeited: boolean;
   timedOut: boolean;
@@ -56,7 +56,7 @@ interface Room {
   lastEnd: ServerMsg | null;
 }
 
-interface Conn { ws: WebSocket; hello: boolean; name: string; deck: DeckCard[] | null; room: Room | null; side: number; alive: boolean }
+interface Conn { ws: WebSocket; hello: boolean; name: string; deck: DeckCard[] | null; critDmg: number; room: Room | null; side: number; alive: boolean }
 
 export interface ServerOptions { port?: number; host?: string; staticDir?: string | null; quiet?: boolean; countdownMs?: number; graceMs?: number }
 
@@ -122,7 +122,7 @@ export function startServer(opts: ServerOptions = {}) {
   };
 
   const seatFor = (c: Conn, r: Room, side: number) => {
-    const seat: Seat = { conn: c, name: c.name, deck: c.deck!, ready: false, token: randomBytes(12).toString('hex'), droppedAt: 0, forfeited: false, timedOut: false, holdUntil: 0, cmdWindow: 0, cmdCount: 0 };
+    const seat: Seat = { conn: c, name: c.name, deck: c.deck!, critDmg: c.critDmg, ready: false, token: randomBytes(12).toString('hex'), droppedAt: 0, forfeited: false, timedOut: false, holdUntil: 0, cmdWindow: 0, cmdCount: 0 };
     r.seats[side] = seat;
     c.room = r; c.side = side;
     send(c, { t: 'room', code: r.code, you: side, token: seat.token });
@@ -143,7 +143,7 @@ export function startServer(opts: ServerOptions = {}) {
     const [a, b] = r.seats as Seat[];
     const info: StartInfo = {
       startAt: Math.round(now() + (opts.countdownMs ?? COUNTDOWN_MS)), seed: randomInt(1, 0x7fffffff), theme: randomInt(THEMES.length),
-      setups: [{ name: a.name, deck: a.deck, elo: 0 }, { name: b.name, deck: b.deck, elo: 0 }],
+      setups: [{ name: a.name, deck: a.deck, elo: 0, critDmg: a.critDmg }, { name: b.name, deck: b.deck, elo: 0, critDmg: b.critDmg }],
     };
     r.state = 'countdown'; r.info = info;
     r.cmds = new Map(); r.log = []; r.pending = []; r.upto = -1; r.hashes = new Map();
@@ -246,8 +246,8 @@ export function startServer(opts: ServerOptions = {}) {
       if (m.proto !== PROTO) { fail(c, 'version', 'This game version does not match the server. Reload to update.'); c.ws.close(); return; }
       const deck = cleanDeck(m.deck);
       if (!deck) { fail(c, 'deck', 'Your deck is not valid for online duels.'); return; }
-      c.hello = true; c.name = cleanName(m.name); c.deck = deck;
-      if (c.room) { const s = c.room.seats[c.side]; if (s && s.conn === c && c.room.state === 'lobby') { s.name = c.name; s.deck = deck; lobby(c.room); } }
+      c.hello = true; c.name = cleanName(m.name); c.deck = deck; c.critDmg = cleanCrit(m.critDmg);
+      if (c.room) { const s = c.room.seats[c.side]; if (s && s.conn === c && c.room.state === 'lobby') { s.name = c.name; s.deck = deck; s.critDmg = c.critDmg; lobby(c.room); } }
       return;
     }
     if (!c.hello) { fail(c, 'hello', 'Say hello first.'); return; }
@@ -329,7 +329,7 @@ export function startServer(opts: ServerOptions = {}) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 32 * 1024 });
   const conns = new Map<WebSocket, Conn>();
   wss.on('connection', (ws) => {
-    const c: Conn = { ws, hello: false, name: 'Player', deck: null, room: null, side: -1, alive: true };
+    const c: Conn = { ws, hello: false, name: 'Player', deck: null, critDmg: 1.5, room: null, side: -1, alive: true };
     conns.set(ws, c);
     send(c, { t: 'welcome', proto: PROTO, now: now() });
     ws.on('pong', () => { c.alive = true; });

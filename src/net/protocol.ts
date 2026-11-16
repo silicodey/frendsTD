@@ -59,7 +59,7 @@ export type ServerMsg =
 
 /** Client → server messages. */
 export type ClientMsg =
-  | { t: 'hello'; proto: number; name: string; deck: DeckCard[] }
+  | { t: 'hello'; proto: number; name: string; deck: DeckCard[]; critDmg?: number }
   | { t: 'ping'; c: number }
   | { t: 'create' }
   | { t: 'join'; code: string }
@@ -107,6 +107,11 @@ export function cleanDeck(x: unknown): DeckCard[] | null {
     out.push({ id: o.id, level, talents });
   }
   return out;
+}
+
+/** Account crit damage as sent by a client: a number in the game's range, else the starting value. */
+export function cleanCrit(x: unknown): number {
+  return typeof x === 'number' && Number.isFinite(x) ? Math.min(3.5, Math.max(1.5, x)) : 1.5;
 }
 
 export function cleanCode(x: unknown): string | null {

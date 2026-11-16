@@ -263,6 +263,7 @@ export class Duel {
     const rows: [string, string][] = [];
     if (d.dmg > 0) rows.push([beam ? 'Damage / sec (rank 1)' : 'Damage (rank 1)', dmg.toFixed(dmg < 10 ? 1 : 0)]);
     if (!beam && d.rate > 0) rows.push(['Attack speed', `${(d.rate * (d.burst ?? 1)).toFixed(2)}/s`]);
+    if (d.crit) rows.push(['Crit', `${Math.round(d.crit[0] * 100)}% chance · ${Math.round(d.crit[1] * 100)}% damage`]);
     rows.push(['Reach', area ? (d.kind === 'support' ? 'Adjacent units' : `${d.range.toFixed(1)} tiles`) : 'Whole lane']);
     rows.push(['Each rank', `+${Math.round((1.85 - 1) * 100)}% damage, +7% speed`]);
     rows.push(['Card level', String(spec.card.level)]);

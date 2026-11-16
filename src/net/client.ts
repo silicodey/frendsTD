@@ -105,7 +105,7 @@ export class OnlineSession {
   private samples: { rtt: number; off: number }[] = [];
   private listeners = new Set<(e: NetEvent) => void>();
 
-  constructor(public url: string, private hello: () => { name: string; deck: DeckCard[] }) {
+  constructor(public url: string, private hello: () => { name: string; deck: DeckCard[]; critDmg?: number }) {
     const saved = store.get(RESUME_KEY, session());
     if (saved) {
       try {
@@ -162,7 +162,7 @@ export class OnlineSession {
       this.status = 'online';
       this.error = null;
       const h = this.hello();
-      this.send({ t: 'hello', proto: PROTO, name: h.name, deck: h.deck });
+      this.send({ t: 'hello', proto: PROTO, name: h.name, deck: h.deck, critDmg: h.critDmg });
       this.samples = [];
       for (let i = 0; i < 5; i++) setTimeout(() => this.ping(), i * 120);
       clearInterval(this.pingTimer);
@@ -239,7 +239,7 @@ export class OnlineSession {
   markLost(why: string) { if (!this.lost) { this.lost = why; this.emit('lost'); } }
 
   leaveRoom() { this.send({ t: 'leave' }); this.forgetRoom(); this.lost = null; this.emit('room'); }
-  refreshHello() { if (this.status === 'online') { const h = this.hello(); this.send({ t: 'hello', proto: PROTO, name: h.name, deck: h.deck }); } }
+  refreshHello() { if (this.status === 'online') { const h = this.hello(); this.send({ t: 'hello', proto: PROTO, name: h.name, deck: h.deck, critDmg: h.critDmg }); } }
 
   private forgetRoom() {
     this.code = ''; this.you = -1; this.token = ''; this.lobby = null; this.info = null; this.result = null;

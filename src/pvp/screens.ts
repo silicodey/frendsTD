@@ -11,9 +11,9 @@ import {
   upgradeCost, usageLevel, usageTier, type CheckpointLoot,
 } from './economy';
 import type { DeckCard, PvpMatch } from './match';
-import { buildSpec } from './match';
+import { CRIT_DMG_MAX, CRIT_DMG_START, buildSpec } from './match';
 import {
-  DECK_SIZE, arenaOf, buyOffer, canUpgrade, chooseTalent, deckCards, limits, resetLimits, setDeckSlot, settleMatch, shopOffers, spendLimit, upgrade,
+  DECK_SIZE, arenaOf, buyOffer, critDamageOf, canUpgrade, chooseTalent, deckCards, limits, resetLimits, setDeckSlot, settleMatch, shopOffers, spendLimit, upgrade,
   type MatchResult,
 } from './profile';
 import { PVP_UNITS, RARITY_INFO, isSignature, rarityOf } from './roster';
@@ -62,7 +62,9 @@ export function makeRival(elo: number, myDeck: DeckCard[], arena: number, rng: (
   const rivalElo = Math.max(0, Math.round(elo + (rng() - 0.45) * 120));
   // the first few matches are gentle while you learn
   const skill = matchesPlayed < 3 ? 0.3 + matchesPlayed * 0.08 : Math.min(0.92, 0.45 + arena * 0.08 + (rng() - 0.5) * 0.15);
-  return { name: RIVAL_NAMES[Math.floor(rng() * RIVAL_NAMES.length)] + (rng() < 0.4 ? `_${Math.floor(rng() * 99)}` : ''), elo: rivalElo, deck, skill };
+  // a rival's account has levelled about as many cards as its deck suggests
+  const critDmg = Math.min(CRIT_DMG_MAX, CRIT_DMG_START + 0.02 * deck.reduce((a, c) => a + (c.level - startLevel(c.id)) * 3, 0));
+  return { name: RIVAL_NAMES[Math.floor(rng() * RIVAL_NAMES.length)] + (rng() < 0.4 ? `_${Math.floor(rng() * 99)}` : ''), elo: rivalElo, deck, skill, critDmg };
 }
 
 export class PvpScreens {
@@ -186,6 +188,7 @@ export class PvpScreens {
           <div class="usage-h"><span>${ICON.usage} Usage tier <b>${usageTier(u.level)} ${u.level}</b></span><i>${u.into}/${u.need}</i></div>
           <div class="meter"><i style="width:${Math.round((u.into / u.need) * 100)}%"></i></div>
           <p class="dim small">Usage grows as you upgrade units and play. Every level pays Tokens and 2 Resets, and resets your Limits.</p>
+          <div class="usage-h crit-stat"><span>${ICON.bolt} Crit damage <b>${Math.round(critDamageOf(p) * 100)}%</b></span><i>+2% per card level-up</i></div>
         </section>
         <p class="record">${p.wins}W · ${p.losses}L${p.draws ? ` · ${p.draws}D` : ''}${p.streak > 1 ? ` · ${p.streak} win streak` : ''} · best ${p.bestElo} Elo</p>
       </div>`);
@@ -248,6 +251,7 @@ export class PvpScreens {
     const statRows: [string, string][] = [];
     if (def.dmg > 0) statRows.push([beam ? 'Damage / sec' : 'Damage', dmg.toFixed(dmg < 10 ? 1 : 0)]);
     if (!beam && def.rate > 0) statRows.push(['Attack speed', `${(spec.def.rate * (spec.def.burst ?? 1)).toFixed(2)}/s`]);
+    if (spec.def.crit) statRows.push(['Crit chance', `${Math.round(spec.def.crit[0] * 100)}% · ${Math.round(critDamageOf(p) * 100)}% damage`]);
     statRows.push(['Reach', area ? (def.kind === 'support' ? 'Adjacent units' : `${spec.def.range.toFixed(1)} tiles`) : 'Whole lane']);
     if (def.buff) statRows.push(['Aura', traits(spec.def).filter((x) => x.startsWith('Buff')).join(', ').replace(/Buff /g, '')]);
     const arena = ARENAS[arenaOfUnit(id)];
@@ -330,10 +334,11 @@ export class PvpScreens {
     const deck = deckCards(p);
     const arena = arenaOf(p);
     const rival = mode === 'local'
-      ? { name: 'Player 2', elo: p.elo, deck: deck.map((c) => ({ ...c })), skill: 0 }
+      ? { name: 'Player 2', elo: p.elo, deck: deck.map((c) => ({ ...c })), skill: 0, critDmg: critDamageOf(p) }
       : makeRival(p.elo, deck, arena.id, rng, mode === 'ranked' ? p.matches : 3);
     const opts: DuelOptions = {
-      mode, me: { name: mode === 'local' ? 'Player 1' : 'You', deck, elo: p.elo }, rival: { name: rival.name, deck: rival.deck, elo: rival.elo },
+      mode, me: { name: mode === 'local' ? 'Player 1' : 'You', deck, elo: p.elo, critDmg: critDamageOf(p) },
+      rival: { name: rival.name, deck: rival.deck, elo: rival.elo, critDmg: mode === 'local' ? critDamageOf(p) : rival.critDmg },
       rivalSkill: rival.skill, theme: arena.theme, seed, tutorial: mode !== 'local' && p.matches === 0 && !p.coached,
     };
     if (opts.tutorial) { p.coached = true; this.save(); }
@@ -459,7 +464,7 @@ export class PvpScreens {
   private ensureNet(url: string) {
     if (this.net && this.net.url === url) { if (this.net.status === 'offline') { this.net.error = null; this.net.connect(); } return; }
     this.net?.close();
-    const net = new OnlineSession(url, () => ({ name: this.playerName(), deck: deckCards(this.p) }));
+    const net = new OnlineSession(url, () => ({ name: this.playerName(), deck: deckCards(this.p), critDmg: critDamageOf(this.p) }));
     this.net = net;
     net.on((e) => this.onNet(e));
     net.connect();

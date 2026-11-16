@@ -6,7 +6,7 @@ import {
 } from './economy';
 import { PVP_IDS } from './roster';
 import { TALENT_LEVELS, isSignatureId } from './signatures';
-import type { DeckCard } from './match';
+import { CRIT_DMG_MAX, CRIT_DMG_START, type DeckCard } from './match';
 
 export const DECK_SIZE = 5;
 export const STARTER_DECK = ['gem_flash', 'cl_sonnet', 'cx_mini', 'gk_tesla', 'cl_thinking'];
@@ -70,6 +70,12 @@ export function deckCards(p: PvpProfile): DeckCard[] {
   return p.deck.map((id) => ({ id, level: p.cards[id]?.level ?? startLevel(id), talents: p.talents[id] ?? [-1, -1, -1, -1] }));
 }
 export const arenaOf = (p: PvpProfile) => arenaFor(p.elo);
+/** Account crit damage (Rush Royale style): 150% to start, +2% for every card level-up you have made. */
+export function critDamageOf(p: PvpProfile): number {
+  let ups = 0;
+  for (const [id, c] of Object.entries(p.cards)) ups += Math.max(0, c.level - startLevel(id));
+  return Math.min(CRIT_DMG_MAX, CRIT_DMG_START + 0.02 * ups);
+}
 export function limits(p: PvpProfile, now: number) { p.limits = tickLimits(p.limits, now); return p.limits; }
 
 export function canUpgrade(p: PvpProfile, id: string): 'ok' | 'max' | 'weights' | 'tokens' | 'locked' {

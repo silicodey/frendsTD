@@ -1,4 +1,4 @@
-import { TOWER_BY_ID, approxDps } from '../data/towers';
+import { TOWER_BY_ID, approxDps, dutyOf } from '../data/towers';
 import type { LevelDef, TowerDef } from '../data/types';
 import { mulberry32 } from '../data/levels';
 import { CELL_BLOCKED, CELL_FREE, CELL_VOID, Sim, type Enemy, type SimEvent, type Tower } from '../sim/sim';
@@ -51,7 +51,14 @@ export const BOSS_TUNE = { hpBase: 0.2, hpGrowth: 1.24, armor: 0.4, drainEvery: 
 const BOSS_HP = (wave: number) => BOSS_TUNE.hpBase * pow(BOSS_TUNE.hpGrowth, wave - 4);
 
 export interface DeckCard { id: string; level: number; talents: number[] }
-export interface PlayerSetup { name: string; deck: DeckCard[]; elo?: number }
+/** `critDmg` is the account's crit damage multiplier (1.5 = crits deal 150%); it grows as cards level up. */
+export interface PlayerSetup { name: string; deck: DeckCard[]; elo?: number; critDmg?: number }
+
+/** Crit chance of each Damage unit (Support units don't crit). Precision units crit more often. */
+export const BASE_CRIT = 0.08;
+export const CRIT_DMG_START = 1.5, CRIT_DMG_MAX = 3.5;
+const PRECISION_CRIT: Record<string, number> = { cx_debugger: 0.15, cl_computer: 0.18, gem_deepthink: 0.15, cx_refactor: 0.12, gk_heavy: 0.2, gk_unhinged: 0.1 };
+export const critChanceOf = (id: string) => (dutyOf(TOWER_BY_ID[id]) === 'damage' ? PRECISION_CRIT[id] ?? BASE_CRIT : 0);
 
 export interface UnitSpec {
   card: DeckCard; base: TowerDef; def: TowerDef; mods: UnitMods; flags: Set<string>; sig?: Signature; ap: number; levelMult: number;
@@ -67,7 +74,7 @@ export interface MatchEvent { t: 'summon' | 'merge' | 'power' | 'heart' | 'wave'
 const isArea = (d: TowerDef) => d.kind === 'nova' || d.kind === 'aura' || d.kind === 'support';
 
 /** Build the battle version of a unit from its card: normalised damage, battle range, talents. */
-export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: number } = {}): UnitSpec {
+export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: number; critDmg?: number } = {}): UnitSpec {
   const base = TOWER_BY_ID[card.id];
   const rarity = rarityOf(base);
   const sig = SIGNATURE_BY_ID[card.id];
@@ -85,7 +92,12 @@ export function buildSpec(card: DeckCard, opts: { noRarity?: boolean; cal?: numb
   if (mods.slow) d.slow = [(base.slow?.[0] ?? 0) + mods.slow[0], (base.slow?.[1] ?? 0) + mods.slow[1]];
   if (mods.stun) d.stun = (base.stun ?? 0) + mods.stun;
   if (base.kind === 'nova' && base.stun) d.stun = base.stun * 0.5 + (mods.stun ?? 0); // area stuns are halved in duels
-  if (mods.crit || mods.critMult) d.crit = [(base.crit?.[0] ?? 0) + (mods.crit ?? 0), (base.crit?.[1] ?? 2) + (mods.critMult ?? 0)];
+  // every Damage unit can crit: its own chance (plus specialities), at the account's crit damage
+  // (a unit built to crit, like Juggernaut, hits a little harder still)
+  const critDmg = Math.min(CRIT_DMG_MAX, Math.max(1, opts.critDmg ?? CRIT_DMG_START));
+  const cc = critChanceOf(card.id) + (mods.crit ?? 0);
+  if (cc > 0) d.crit = [cc, critDmg + (base.crit ? Math.max(0, base.crit[1] - 2) : 0) + (mods.critMult ?? 0)];
+  else delete d.crit;
   if (base.ramp && mods.rampSpeed) d.ramp = [base.ramp[0], base.ramp[1] / (1 + mods.rampSpeed)];
   if (mods.burst) d.burst = (base.burst ?? 1) + mods.burst;
   if (mods.railWidth) d.railWidth = (base.railWidth ?? 0.4) * (1 + mods.railWidth);
@@ -137,7 +149,7 @@ export class PvpMatch {
       else if (sim.grid[i] === CELL_FREE || sim.grid[i] === CELL_BLOCKED) sim.grid[i] = slot ? CELL_FREE : CELL_BLOCKED;
     }
     this.sides = [a, b].map((p) => ({
-      name: p.name, elo: p.elo ?? 0, deck: p.deck.map((c) => buildSpec(c)), power: p.deck.map(() => 1), compute: START_COMPUTE, summons: 0, hearts: HEARTS,
+      name: p.name, elo: p.elo ?? 0, deck: p.deck.map((c) => buildSpec(c, { critDmg: p.critDmg })), power: p.deck.map(() => 1), compute: START_COMPUTE, summons: 0, hearts: HEARTS,
       kills: 0, leaks: 0, refund: 0, computeEarned: 0, merges: 0, maxRank: 1,
     }));
   }

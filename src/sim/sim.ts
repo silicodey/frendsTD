@@ -695,9 +695,12 @@ export class Sim {
                 const e = t.targets[i];
                 if (!e.alive) continue;
                 const ramp = def.ramp ? 1 + (def.ramp[0] - 1) * Math.min(1, t.rampTs[i] / def.ramp[1]) : 1;
-                // beams can't roll crits, so a crit aura adds its average value instead
-                const critAvg = t.buffCrit ? 1 + Math.min(1, t.buffCrit) * ((def.crit?.[1] ?? 2) - 1) : 1;
-                this.damage(e, st.dmg * BEAM_TICK * ramp * critAvg, t, def.pierce ?? 0, def.shieldMult ?? 1);
+                // beams roll for a crit on every damage tick (same expected value as a per-shot crit)
+                const cc = (def.crit?.[0] ?? 0) + t.buffCrit;
+                const crit = cc > 0 && this.rng() < cc;
+                this.critNow = crit;
+                this.damage(e, st.dmg * BEAM_TICK * ramp * (crit ? def.crit?.[1] ?? 2 : 1), t, def.pierce ?? 0, def.shieldMult ?? 1);
+                this.critNow = false;
                 this.effects(e, t);
               }
             }

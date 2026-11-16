@@ -44,3 +44,27 @@ test('every class fields Damage and Support units in duels, and signatures are D
   }
   for (const t of TOWERS) assert.ok(subroleOf(t).length > 0);
 });
+
+test('every Damage unit can crit at the account crit damage; Support units never crit', async () => {
+  const { PVP_UNITS } = await import('../src/pvp/roster');
+  const { dutyOf } = await import('../src/data/towers');
+  const { buildSpec, CRIT_DMG_START } = await import('../src/pvp/match');
+  const { startLevel } = await import('../src/pvp/economy');
+  for (const t of PVP_UNITS) {
+    const s = buildSpec({ id: t.id, level: startLevel(t.id), talents: [-1, -1, -1, -1] }, { critDmg: 1.8 });
+    if (dutyOf(t) === 'damage') {
+      assert.ok(s.def.crit && s.def.crit[0] >= 0.08, `${t.id} crits`);
+      assert.ok(s.def.crit![1] >= 1.8, `${t.id} uses the account crit damage`);
+    } else assert.equal(s.def.crit, undefined, `${t.id} is support`);
+  }
+  const d = buildSpec({ id: 'cl_sonnet', level: 1, talents: [] });
+  assert.equal(d.def.crit![1], CRIT_DMG_START);
+});
+
+test('account crit damage grows with card level-ups', async () => {
+  const { newProfile, critDamageOf } = await import('../src/pvp/profile');
+  const p = newProfile(0);
+  const base = critDamageOf(p);
+  p.cards.gem_flash.level += 3;
+  assert.ok(Math.abs(critDamageOf(p) - base - 0.06) < 1e-9);
+});
