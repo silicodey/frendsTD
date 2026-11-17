@@ -212,7 +212,8 @@ Duels use deterministic lockstep (`src/net/protocol.ts`, `server/index.ts`):
 | `src/sim/` | Deterministic game simulation with no rendering dependencies (`sim.ts`), plus an auto-player (`bot.ts`) used for balance checks and the battle behind the title screen |
 | `src/data/` | Towers, enemies, levels, wave generation |
 | `src/render/engine.ts` | Three.js renderer: HDR pipeline, MSAA, bloom, colour grade, adaptive resolution, camera rig |
-| `src/render/builder.ts`, `towerModels.ts`, `enemyModels.ts` | Procedural modelling kit; every tower and enemy is merged into a handful of draw calls with per-vertex PBR attributes |
+| `src/render/builder.ts`, `towerModels.ts`, `enemyModels.ts` | Procedural modelling kit; every tower and enemy is merged into a handful of draw calls with per-vertex PBR attributes. Units rebuilt from concept sheets have full custom models (`CUSTOM` in `towerModels.ts`) |
+| `art/` | Artwork pipeline: ChatGPT concept briefs per class, the art checklist, and the Blender modelling kit and models (see `art/README.md`) |
 | `src/render/board.ts` | The level: floating platform, animated lanes, portals, the Core, sky, backdrop |
 | `src/render/fx.ts`, `view.ts` | Particles, beams, lightning, shockwaves; instanced enemies, health bars, shields |
 | `src/render/thumbs.ts` | Tower and enemy portraits rendered by the game renderer for the UI |
