@@ -63,12 +63,12 @@ export function makePbr(instanced = false): THREE.MeshStandardMaterial & { u: Pb
             if (n > vFx.y) discard;
           }`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(vPbr.z, 0.04, 1.0);')
-      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.y;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = max(vPbr.y, 0.0);')
       .replace('#include <emissivemap_fragment>', /* glsl */ `
         #include <emissivemap_fragment>
         totalEmissiveRadiance = vColor.rgb * vPbr.x * uGlow + vec3(1.0, 0.92, 0.85) * vFx.x;
         float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.2);
-        totalEmissiveRadiance += uRim.rgb * (uRim.a * rimF);
+        totalEmissiveRadiance += uRim.rgb * (uRim.a * rimF) * step(0.0, vPbr.y); // negative metalness = a void: no rim light
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.25, vFx.w);
         totalEmissiveRadiance *= 1.0 - vFx.w * 0.85;`);
   };
