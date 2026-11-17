@@ -539,16 +539,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       }
       b.add(cyl(0.03, 0.03, 0.015, 8), { ...K.glow2, p: [0, 0, 0.595], r: Z });
       return { muzzle: [0, 0, 0.6], aims: true };
-    case 'gk_unhinged':
-      b.spin('ball', 'head', [0, 0.26, 0], [1.7, 2.3, 0.9]);
-      b.add(ico(0.15, 0), { ...flat(K.body), p: [0, 0.26, 0] });
-      for (const d of ICO_DIRS) {
-        const l = Math.hypot(...d);
-        const n: V3 = [d[0] / l, d[1] / l, d[2] / l];
-        b.add(cone(0.04, 0.2, 5), { ...flat(K.trim), p: [n[0] * 0.2, 0.26 + n[1] * 0.2, n[2] * 0.2], dir: n });
-        b.add(sph(0.022, 6, 5), { ...K.glow, p: [n[0] * 0.31, 0.26 + n[1] * 0.31, n[2] * 0.31] });
-      }
-      return { muzzle: [0, 0.26, 0], aims: false };
     case 'gk_meme':
       b.add(rbox(0.2, 0.1, 0.2, 0.03), { ...K.dark, p: [0, -0.03, 0] });
       b.xf([0, 0.06, 0], [-0.5, 0, 0]);
@@ -568,16 +558,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
         b.add(sph(0.03, 8, 6), { ...K.glow, p: [x, 0.59, 0] });
       }
       return { muzzle: [0, 0.58, 0], aims: false };
-    case 'gk_colossus':
-      b.add(rbox(0.38, 0.64, 0.27, 0.02), { ...K.body, p: [0, 0.3, 0] });
-      for (let r = 0; r < 7; r++) for (let c = 0; c < 4; c++) for (const s of [-1, 1]) {
-        const on = (r * 7 + c * 3 + (s > 0 ? 1 : 0)) % 5;
-        b.add(box(0.05, 0.022, 0.01), { ...(on === 0 ? K.glow2 : on < 3 ? K.glow : K.dark), p: [-0.12 + c * 0.08, 0.06 + r * 0.08, s * 0.137] });
-      }
-      b.add(box(0.4, 0.03, 0.29), { ...K.trim, p: [0, -0.01, 0] });
-      b.add(box(0.4, 0.03, 0.29), { ...K.trim, p: [0, 0.625, 0] });
-      for (const x of [-0.2, 0.2]) for (const z of [-0.07, 0, 0.07]) b.add(box(0.02, 0.5, 0.035), { ...K.dark, p: [x, 0.3, z] });
-      return { muzzle: [0, 0.66, 0], aims: false };
     case 'gk_heavy':
       b.add(rbox(0.3, 0.26, 0.36, 0.03), { ...K.body, p: [0, 0, -0.2] });
       b.add(cyl(0.07, 0.09, 0.82, 10), { ...K.dark, p: [0, 0, 0.36], r: Z });
@@ -602,6 +582,25 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
 }
 
 // ---------- full custom models (rebuilt from concept sheets: their own base, not the class pedestal) ----------
+const TK = {
+  gun: { c: 0x2e3040, m: 0.7, ro: 0.36 } as Mat, gun2: { c: 0x454858, m: 0.65, ro: 0.34 } as Mat, dark: { c: 0x252731, m: 0.6, ro: 0.42 } as Mat,
+  chrome: { c: 0xa4a6b2, m: 0.85, ro: 0.3 } as Mat, slot: { c: 0xff2a62, e: 1.0 } as Mat, tip: { c: 0xd0d0da, m: 0.5, ro: 0.3 } as Mat,
+};
+/** The Tokyo concept plinth: an octagonal gunmetal block, chamfered top with a thin chrome edge, slot lights on the diagonal faces. Returns its top. */
+function tokyoPlinth(b: Builder, h = 0.2): number {
+  const OCT = PI / 8;
+  b.at('base');
+  b.add(cyl(0.38, 0.43, h, 8), { ...TK.gun, flat: true, p: [0, h / 2, 0], r: [0, OCT, 0] });
+  b.add(cyl(0.32, 0.38, 0.035, 8), { ...TK.gun2, flat: true, p: [0, h + 0.0175, 0], r: [0, OCT, 0] });
+  b.add(tor(0.385, 0.01, 4, 8), { ...TK.chrome, p: [0, h, 0], r: [P2, 0, OCT] });
+  for (let i = 0; i < 4; i++) {
+    const a = PI / 4 + (i * PI) / 2;
+    b.xf([Math.sin(a) * 0.395, h / 2, Math.cos(a) * 0.395], [0, a, 0]);
+    b.add(box(0.1, 0.022, 0.012), { ...TK.slot, r: [-0.24, 0, 0] });
+  }
+  b.xf();
+  return h + 0.035;
+}
 type Custom = (b: Builder, K: Kit) => { headY: number; muzzle: V3; aims: boolean };
 const CUSTOM: Record<string, Custom> = {
   // Supernova: a caged red star in a chrome gimbal, between two tall pylons, on a two-tier octagonal plinth
@@ -655,20 +654,9 @@ const CUSTOM: Record<string, Custom> = {
     return { headY: STAR_Y, muzzle: [0, 0, 0], aims: false };
   },
   // Arc Coil: a stacked coil on an octagonal plinth; two counter-rotating banded rings, a spark gap of two bent prongs on top
-  gk_tesla: (b, K) => {
-    const OCT = PI / 8;
-    const gun: Mat = { c: 0x2e3040, m: 0.7, ro: 0.36 }, gun2: Mat = { c: 0x454858, m: 0.65, ro: 0.34 }, dark: Mat = { c: 0x252731, m: 0.6, ro: 0.42 };
-    const chrome: Mat = { c: 0xa4a6b2, m: 0.85, ro: 0.3 }, slot: Mat = { c: 0xff2a62, e: 1.0 }, tip: Mat = { c: 0xd0d0da, m: 0.5, ro: 0.3 };
-    b.at('base');
-    b.add(cyl(0.38, 0.43, 0.2, 8), { ...gun, flat: true, p: [0, 0.1, 0], r: [0, OCT, 0] }); // plinth
-    b.add(cyl(0.32, 0.38, 0.035, 8), { ...gun2, flat: true, p: [0, 0.2175, 0], r: [0, OCT, 0] }); // chamfered top
-    b.add(tor(0.385, 0.01, 4, 8), { ...chrome, p: [0, 0.2, 0], r: [P2, 0, OCT] }); // thin chrome edge
-    for (let i = 0; i < 4; i++) {
-      const a = PI / 4 + (i * PI) / 2;
-      b.xf([Math.sin(a) * 0.395, 0.1, Math.cos(a) * 0.395], [0, a, 0]);
-      b.add(box(0.1, 0.022, 0.012), { ...slot, r: [-0.24, 0, 0] });
-    }
-    b.xf();
+  gk_tesla: (b) => {
+    const { gun, gun2, dark, chrome, slot, tip } = TK;
+    tokyoPlinth(b);
     b.add(cyl(0.13, 0.15, 0.4, 16), { ...dark, p: [0, 0.43, 0] }); // core column
     // two coil rings, turning opposite ways
     const coil = (name: string, y: number, spin: number) => {
@@ -693,6 +681,63 @@ const CUSTOM: Record<string, Custom> = {
       b.add(box(0.05, 0.05, 0.06), { ...tip, p: [sx * 0.065, 0.815, 0] });
     }
     return { headY: 0.81, muzzle: [0, 0, 0], aims: false };
+  },
+  // Frenzy: a drum turret cradled by two armour cheeks on a chrome turntable; a cross of four barrels spins on its face
+  gk_unhinged: (b) => {
+    const { gun2, dark, chrome, slot } = TK;
+    const top = tokyoPlinth(b);
+    b.add(cyl(0.27, 0.29, 0.05, 32), { ...chrome, p: [0, top + 0.025, 0] }); // turntable
+    // head (yaws to aim; +Z is forward)
+    const DY = 0.25, FZ = 0.17;
+    b.at('head');
+    b.add(cyl(0.22, 0.22, 0.34, 28), { ...gun2, p: [0, DY, 0], r: [P2, 0, 0] }); // drum
+    b.add(cyl(0.23, 0.23, 0.04, 28), { ...chrome, p: [0, DY, -0.05], r: [P2, 0, 0] }); // band
+    b.add(cyl(0.2, 0.2, 0.02, 28), { ...dark, p: [0, DY, FZ], r: [P2, 0, 0] });
+    b.add(tor(0.15, 0.012, 6, 32), { ...chrome, p: [0, DY, FZ + 0.012] });
+    b.add(cyl(0.06, 0.06, 0.03, 8), { ...dark, p: [0, 0.03, 0] }); // neck
+    const cheek: [number, number][] = [[-0.2, 0], [0.16, 0], [0.2, 0.18], [0.16, 0.44], [-0.12, 0.46], [-0.22, 0.3]];
+    for (const sx of [-1, 1]) {
+      b.add(extrude(cheek, 0.1, 0.014), { ...gun2, flat: true, p: [sx * 0.29, 0.01, 0], r: [0, sx * P2, 0] });
+      b.add(box(0.012, 0.13, 0.024), { ...slot, p: [sx * 0.352, 0.2, 0.08] });
+    }
+    // the spinning barrel cross
+    b.spin('barrels', 'head', [0, DY, FZ], [0, 0, 2.2]);
+    b.add(cyl(0.065, 0.065, 0.07, 16), { ...dark, p: [0, DY, FZ + 0.035], r: [P2, 0, 0] });
+    b.add(cyl(0.035, 0.035, 0.012, 16), { ...slot, e: 1.2, p: [0, DY, FZ + 0.072], r: [P2, 0, 0] });
+    for (let i = 0; i < 4; i++) {
+      const a = (i * PI) / 2, x = Math.cos(a) * 0.13, y = DY + Math.sin(a) * 0.13;
+      b.add(box(Math.abs(Math.cos(a)) * 0.09 + 0.04, Math.abs(Math.sin(a)) * 0.09 + 0.04, 0.05), { ...dark, p: [x * 0.55, DY + (y - DY) * 0.55, FZ + 0.03] });
+      b.add(cyl(0.045, 0.045, 0.1, 14), { ...gun2, p: [x, y, FZ + 0.06], r: [P2, 0, 0] });
+      b.add(tor(0.04, 0.011, 6, 18), { ...chrome, p: [x, y, FZ + 0.11] });
+      b.add(cyl(0.028, 0.028, 0.01, 12), { c: 0x101118, p: [x, y, FZ + 0.111], r: [P2, 0, 0] });
+      b.add(box(0.012, 0.035, 0.012), { ...slot, p: [x + Math.cos(a + P2) * 0.05, y + Math.sin(a + P2) * 0.05, FZ + 0.06], r: [0, 0, a] });
+    }
+    return { headY: top + 0.05, muzzle: [0, DY, FZ + 0.12], aims: true };
+  },
+  // Monolith (support): a tall chamfered slab with glowing edge lines, a turning chrome ring at its foot, a hovering cap
+  gk_colossus: (b) => {
+    const { gun, gun2, chrome, slot } = TK;
+    const top = tokyoPlinth(b, 0.18);
+    b.add(cyl(0.27, 0.31, 0.05, 8), { ...gun2, flat: true, p: [0, top + 0.025, 0], r: [0, PI / 8, 0] });
+    const y0 = top + 0.05;
+    const prof = (w: number, d: number, c: number): [number, number][] => [[-w + c, -d], [w - c, -d], [w, -d + c], [w, d - c], [w - c, d], [-w + c, d], [-w, d - c], [-w, -d + c]];
+    const H = 0.6;
+    b.add(extrude(prof(0.13, 0.085, 0.03), H, 0.01), { ...gun, flat: true, p: [0, y0 + H / 2, 0], r: [-P2, 0, 0] });
+    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      b.add(box(0.012, H - 0.04, 0.012), { ...slot, p: [sx * 0.1225, y0 + H / 2, sz * 0.0775], r: [0, sx * sz * PI / 4, 0] });
+    }
+    b.add(extrude(prof(0.136, 0.091, 0.034), 0.03, 0.008), { ...gun2, flat: true, p: [0, y0 + H, 0], r: [-P2, 0, 0] }); // shoulder
+    // a ring turning at the foot, with two clamps so its motion shows
+    b.spin('ring', 'base', [0, y0 + 0.04, 0], [0, 0.6, 0]);
+    b.add(tor(0.2, 0.014, 8, 40), { ...chrome, p: [0, y0 + 0.04, 0], r: [P2, 0, 0] });
+    for (const a of [0, PI]) b.add(box(0.03, 0.03, 0.04), { ...gun2, p: [Math.sin(a) * 0.2, y0 + 0.04, Math.cos(a) * 0.2], r: [0, a, 0] });
+    // the hovering cap
+    const capY = y0 + H + 0.1;
+    b.spin('cap', 'base', [0, capY, 0], [0, 0.45, 0], 0.018, 1.4);
+    b.add(extrude(prof(0.15, 0.1, 0.04), 0.06, 0.01), { ...gun2, flat: true, p: [0, capY, 0], r: [-P2, 0, 0] });
+    b.add(extrude(prof(0.145, 0.095, 0.038), 0.012, 0), { ...chrome, p: [0, capY - 0.036, 0], r: [-P2, 0, 0] });
+    b.at('base');
+    return { headY: capY, muzzle: [0, 0, 0], aims: false };
   },
 };
 
