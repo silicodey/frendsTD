@@ -53,7 +53,7 @@ export const SIGNATURES: Signature[] = [
   // ---------------------------------------------------------------- Gemini
   {
     unit: 'gem_ultra',
-    ability: { name: 'Prism Burst', cd: 4, text: (p) => `Every 4s, each beam target bursts with light, dealing ${pct(1.5 * p)} of Ultra's damage to enemies around it.` },
+    ability: { name: 'Prism Burst', cd: 4, text: (p) => `Every 4s, each beam target bursts with light, dealing ${pct(1.5 * p)} of Spectra's damage to enemies around it.` },
     talents: [
       [T('ul1a', 'Wide Spectrum', '+1 beam target.', { targets: 1 }), T('ul1b', 'Focused Light', '+25% damage.', { dmg: 0.25 })],
       [T('ul2a', 'Rapid Refraction', 'Prism Burst 25% more often.', { abilityCd: 0.25 }), T('ul2b', 'Chromatic Slow', 'Bursts slow enemies by 30% for 2s.', { flags: ['burstSlow'] })],
@@ -73,7 +73,7 @@ export const SIGNATURES: Signature[] = [
   },
   {
     unit: 'gem_twinsuns',
-    ability: { name: 'Solar Flare', cd: 0, text: (p) => `Enemies that die while burning explode, dealing ${pct(0.8 * p)} of Twin Suns' damage around them and setting the blast area on fire.` },
+    ability: { name: 'Solar Flare', cd: 0, text: (p) => `Enemies that die while burning explode, dealing ${pct(0.8 * p)} of Binary Suns' damage around them and setting the blast area on fire.` },
     talents: [
       [T('ts1a', 'Third Body', '+1 sun beam.', { targets: 1 }), T('ts1b', 'Fusion', '+25% damage.', { dmg: 0.25 })],
       [T('ts2a', 'Coronal Mass', 'Flare radius +40%.', { abilityRadius: 0.4 }), T('ts2b', 'Hotter Core', 'Burn damage +50%.', { dot: [0.5, 0] })],
