@@ -157,7 +157,6 @@ const ICO_DIRS: V3[] = (() => {
   for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) { o.push([0, s1, s2 * t], [s1, s2 * t, 0], [s2 * t, 0, s1]); }
   return o;
 })();
-const CUBE_DIRS: V3[] = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]];
 
 function openBook(b: Builder, K: Kit, w: number, d: number, y: number) {
   b.add(rbox(w, 0.035, d, 0.012), { ...K.body, p: [-w / 2 + 0.005, y + 0.045, 0], r: [0, 0, -0.32] });
@@ -519,13 +518,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       for (const a of [-0.07, 0.07]) for (const c of [-0.07, 0, 0.07]) pip(a, -h, c);
       return { muzzle: [0, 0.26, 0], aims: false };
     }
-    case 'gk_tesla':
-      b.add(cyl(0.05, 0.075, 0.42, 8), { ...K.dark, p: [0, 0.15, 0] });
-      b.add(tor(0.19, 0.032, 8, 28), { ...K.trim, p: [0, 0.04, 0], r: [P2, 0, 0] });
-      b.add(tor(0.145, 0.028, 8, 28), { ...K.trim, p: [0, 0.16, 0], r: [P2, 0, 0] });
-      b.add(tor(0.1, 0.024, 8, 28), { ...K.trim, p: [0, 0.27, 0], r: [P2, 0, 0] });
-      b.add(sph(0.09, 14, 10), { ...K.glow, p: [0, 0.42, 0] });
-      return { muzzle: [0, 0.42, 0], aims: false };
     case 'gk_raptor':
       b.add(rbox(0.22, 0.1, 0.26, 0.03), { ...K.dark, p: [0, -0.02, 0] });
       b.xf([0, 0.02, -0.06], [-0.95, 0, 0]);
@@ -603,23 +595,106 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       b.add(tor(0.215, 0.008, 6, 40), { ...K.glow2, p: [0, 0.32, 0] });
       b.add(tor(0.42, 0.008, 6, 48), { ...K.trim, p: [0, 0.32, 0], r: [P2 - 0.2, 0, 0.3] });
       return { muzzle: [0, 0.32, 0], aims: false };
-    case 'gk_supernova':
-      b.spin('star', 'head', [0, 0.46, 0], [0.3, 1.2, 0], 0.04);
-      b.add(ico(0.17, 1), { c: 0xfff0f4, e: 3.2, flat: true, p: [0, 0.46, 0] });
-      for (const d of CUBE_DIRS) {
-        const n: V3 = [d[0] * 0.577, d[1] * 0.577, d[2] * 0.577];
-        b.add(oct(0.07), { ...flat(K.glow), p: [n[0] * 0.25, 0.46 + n[1] * 0.25, n[2] * 0.25], dir: n, s: [0.32, 3.0, 0.32] });
-      }
-      b.spin('gyro1', 'head', [0, 0.46, 0], [0, -0.9, 0]);
-      b.add(tor(0.4, 0.012, 6, 48), { ...K.trim, p: [0, 0.46, 0], r: [P2 + 0.6, 0, 0] });
-      b.spin('gyro2', 'head', [0, 0.46, 0], [0, 0.6, 0]);
-      b.add(tor(0.46, 0.012, 6, 48), { ...K.trim, p: [0, 0.46, 0], r: [P2 - 0.5, 0, 0.5] });
-      return { muzzle: [0, 0.46, 0], aims: false };
   }
   // fallback
   b.add(sph(0.15), { ...K.glow, p: [0, 0.15, 0] });
   return { muzzle: [0, 0.2, 0], aims: false };
 }
+
+// ---------- full custom models (rebuilt from concept sheets: their own base, not the class pedestal) ----------
+type Custom = (b: Builder, K: Kit) => { headY: number; muzzle: V3; aims: boolean };
+const CUSTOM: Record<string, Custom> = {
+  // Supernova: a caged red star in a chrome gimbal, between two tall pylons, on a two-tier octagonal plinth
+  gk_supernova: (b, K) => {
+    const OCT = PI / 8, STAR_Y = 0.58;
+    const gun: Mat = { c: 0x2e3040, m: 0.7, ro: 0.36 }, gun2: Mat = { c: 0x454858, m: 0.65, ro: 0.34 }, top: Mat = { c: 0x262833, m: 0.6, ro: 0.42 };
+    const chrome: Mat = { c: 0xa4a6b2, m: 0.85, ro: 0.3 }, slot: Mat = { c: 0xff2a62, e: 1.0 }, collar: Mat = { c: 0x30323d, m: 0.6, ro: 0.4 };
+    b.at('base');
+    b.add(cyl(0.4, 0.43, 0.2, 8), { ...gun, flat: true, p: [0, 0.1, 0], r: [0, OCT, 0] }); // lower tier
+    b.add(cyl(0.385, 0.4, 0.03, 8), { ...chrome, flat: true, p: [0, 0.215, 0], r: [0, OCT, 0] }); // chrome chamfer band
+    b.add(cyl(0.31, 0.355, 0.08, 8), { ...gun2, flat: true, p: [0, 0.27, 0], r: [0, OCT, 0] }); // upper tier
+    b.add(cyl(0.27, 0.27, 0.01, 8), { ...top, p: [0, 0.312, 0], r: [0, OCT, 0] }); // top face
+    // short slot lights on the diagonal faces of the lower tier
+    for (let i = 0; i < 4; i++) {
+      const a = PI / 4 + (i * PI) / 2;
+      b.xf([Math.sin(a) * 0.392, 0.12, Math.cos(a) * 0.392], [0, a, 0]);
+      b.add(box(0.1, 0.022, 0.012), { ...slot });
+    }
+    // pylons on the axes: tall leaning pylons left and right, short wedges front and back (profile: x = outward, y = up)
+    const tall: [number, number][] = [[-0.055, 0], [0.045, 0], [0.085, 0.36], [0.115, 0.66], [0.07, 0.72], [0.02, 0.66], [-0.005, 0.38]];
+    const wedge: [number, number][] = [[-0.05, 0], [0.075, 0], [0.065, 0.17], [0.005, 0.21], [-0.05, 0.16]];
+    for (let i = 0; i < 4; i++) {
+      const a = (i * PI) / 2, isTall = i % 2 === 1; // ±X tall (left/right from the default camera), ±Z wedges
+      b.xf([Math.sin(a) * 0.37, 0.2, Math.cos(a) * 0.37], [0, a, 0]); // local +Z points outward
+      if (isTall) {
+        b.add(extrude(tall, 0.105, 0.012), { ...gun2, flat: true, r: [0, -P2, 0] });
+        b.add(box(0.022, 0.13, 0.012), { ...slot, p: [0, 0.14, 0.075], r: [0.08, 0, 0] });
+      } else {
+        b.add(extrude(wedge, 0.13, 0.012), { ...gun2, flat: true, r: [0, -P2, 0] });
+        b.add(box(0.022, 0.1, 0.012), { ...slot, p: [0, 0.09, 0.087], r: [-0.06, 0, 0] });
+      }
+    }
+    b.xf();
+    // the star: slow spin and a small bob
+    b.spin('star', 'base', [0, STAR_Y, 0], [0, 0.6, 0], 0.012, 1.6);
+    b.add(sph(0.135, 20, 14), { c: 0xff1f5a, e: 1.15, m: 0.1, ro: 0.3, p: [0, STAR_Y, 0] });
+    // two gimbal rings with collar clamps, turning opposite ways around the star
+    const ring = (name: string, R: number, rot: V3, spin: V3) => {
+      b.spin(name, 'base', [0, STAR_Y, 0], spin);
+      b.xf([0, STAR_Y, 0], rot);
+      b.add(tor(R, 0.013, 8, 48), { ...chrome });
+      for (const th of [0.25, 0.25 + PI]) {
+        const pt: V3 = [Math.cos(th) * R, Math.sin(th) * R, 0];
+        b.add(cyl(0.024, 0.024, 0.045, 10), { ...collar, p: pt, dir: [-Math.sin(th), Math.cos(th), 0] });
+      }
+      b.xf();
+    };
+    ring('ringA', 0.215, [0, 0.6, 0.45], [0, 0.85, 0]);
+    ring('ringB', 0.245, [P2 - 0.55, 0, -0.35], [0, -0.55, 0]);
+    b.at('base');
+    return { headY: STAR_Y, muzzle: [0, 0, 0], aims: false };
+  },
+  // Arc Coil: a stacked coil on an octagonal plinth; two counter-rotating banded rings, a spark gap of two bent prongs on top
+  gk_tesla: (b, K) => {
+    const OCT = PI / 8;
+    const gun: Mat = { c: 0x2e3040, m: 0.7, ro: 0.36 }, gun2: Mat = { c: 0x454858, m: 0.65, ro: 0.34 }, dark: Mat = { c: 0x252731, m: 0.6, ro: 0.42 };
+    const chrome: Mat = { c: 0xa4a6b2, m: 0.85, ro: 0.3 }, slot: Mat = { c: 0xff2a62, e: 1.0 }, tip: Mat = { c: 0xd0d0da, m: 0.5, ro: 0.3 };
+    b.at('base');
+    b.add(cyl(0.38, 0.43, 0.2, 8), { ...gun, flat: true, p: [0, 0.1, 0], r: [0, OCT, 0] }); // plinth
+    b.add(cyl(0.32, 0.38, 0.035, 8), { ...gun2, flat: true, p: [0, 0.2175, 0], r: [0, OCT, 0] }); // chamfered top
+    b.add(tor(0.385, 0.01, 4, 8), { ...chrome, p: [0, 0.2, 0], r: [P2, 0, OCT] }); // thin chrome edge
+    for (let i = 0; i < 4; i++) {
+      const a = PI / 4 + (i * PI) / 2;
+      b.xf([Math.sin(a) * 0.395, 0.1, Math.cos(a) * 0.395], [0, a, 0]);
+      b.add(box(0.1, 0.022, 0.012), { ...slot, r: [-0.24, 0, 0] });
+    }
+    b.xf();
+    b.add(cyl(0.13, 0.15, 0.4, 16), { ...dark, p: [0, 0.43, 0] }); // core column
+    // two coil rings, turning opposite ways
+    const coil = (name: string, y: number, spin: number) => {
+      b.spin(name, 'base', [0, y, 0], [0, spin, 0]);
+      b.add(cyl(0.29, 0.29, 0.1, 32), { ...gun2, p: [0, y, 0] });
+      b.add(cyl(0.21, 0.21, 0.104, 24), { ...dark, p: [0, y, 0] });
+      for (const dy of [-0.05, 0.05]) b.add(tor(0.29, 0.012, 6, 40), { ...chrome, p: [0, y + dy, 0], r: [P2, 0, 0] });
+      for (const a of [-0.5, 0.5, PI - 0.5, PI + 0.5]) {
+        b.add(box(0.075, 0.024, 0.012), { ...slot, p: [Math.sin(a) * 0.292, y, Math.cos(a) * 0.292], r: [0, a, 0] });
+      }
+      for (const a of [0, PI]) b.add(box(0.045, 0.06, 0.03), { ...dark, p: [Math.sin(a) * 0.3, y - 0.05, Math.cos(a) * 0.3], r: [0, a, 0] });
+    };
+    coil('coilLow', 0.33, 0.8);
+    coil('coilHigh', 0.49, -0.8);
+    b.at('base');
+    b.add(cyl(0.15, 0.15, 0.06, 20), { ...dark, p: [0, 0.6, 0] }); // cap
+    b.add(cyl(0.11, 0.13, 0.03, 20), { ...gun, p: [0, 0.645, 0] });
+    // the spark gap: two bent prongs facing each other
+    for (const sx of [-1, 1]) {
+      b.add(box(0.06, 0.16, 0.07), { ...gun2, flat: true, p: [sx * 0.17, 0.66, 0], r: [0, 0, sx * -0.18] });
+      b.add(box(0.06, 0.12, 0.07), { ...gun2, flat: true, p: [sx * 0.12, 0.78, 0], r: [0, 0, sx * 0.75] });
+      b.add(box(0.05, 0.05, 0.06), { ...tip, p: [sx * 0.065, 0.815, 0] });
+    }
+    return { headY: 0.81, muzzle: [0, 0, 0], aims: false };
+  },
+};
 
 const cache = new Map<string, TowerModel>();
 
@@ -627,14 +702,19 @@ export function towerModel(def: TowerDef): TowerModel {
   let m = cache.get(def.id);
   if (m) return m;
   const b = new Builder();
-  const grade = def.tier <= 4 ? 0 : def.tier <= 8 ? 1 : 2;
-  const headY = pedestal(b, def.family, grade);
-  const h = head(b, def, KITS[def.family]);
+  const custom = CUSTOM[def.id];
+  let headY: number, h: { muzzle: V3; aims: boolean };
+  if (custom) ({ headY, ...h } = custom(b, KITS[def.family]));
+  else {
+    const grade = def.tier <= 4 ? 0 : def.tier <= 8 ? 1 : 2;
+    headY = pedestal(b, def.family, grade) + 0.06;
+    h = head(b, def, KITS[def.family]);
+  }
   m = {
     base: b.build('base')!,
     head: b.build('head'),
     parts: b.parts(),
-    headY: headY + 0.06,
+    headY,
     muzzle: h.muzzle,
     aims: h.aims,
   };
