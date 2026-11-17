@@ -35,19 +35,19 @@ for i in range(4):  # slot lights on the diagonal faces of the lower tier
     s = kit.box(f'slot {i}', slot, (0.012, 0.1, 0.022), bevel=0.002)
     kit.place_radial(s, a, 0.425, 0.08)
 
-# pylons: tall leaning pylons left/right, short wedges front/back (profile: x = outward, z = up)
-tall = [(-0.05, 0), (0.07, 0), (0.12, 0.3), (0.1, 0.6), (0.04, 0.68), (-0.02, 0.62), (0.02, 0.32)]
+# four tall pylons on the axes, closing over the star like a cage (profile: x = outward, z = up)
+tall = [(-0.03, 0), (0.07, 0), (0.085, 0.45), (-0.015, 0.83), (-0.095, 0.79), (-0.015, 0.45)]  # upright, then angles in over the star
 wedge = [(-0.06, 0), (0.08, 0), (0.06, 0.2), (0.0, 0.24), (-0.06, 0.2)]
 for i in range(4):
     a = i * PI / 2
-    is_tall = i % 2 == 1
-    p = kit.profile(f'pylon {i}', gun2, tall if is_tall else wedge, 0.14 if is_tall else 0.16, bevel=0.016)
+    is_tall = True  # four tall pylons, one on each side
+    p = kit.profile(f'pylon {i}', gun2, tall if is_tall else wedge, 0.11 if is_tall else 0.16, bevel=0.014)
     kit.place_radial(p, a, 0.39, 0.16)
     s = kit.box(f'pylon slot {i}', slot, (0.012, 0.022, 0.13 if is_tall else 0.1), bevel=0.002)
     import mathutils  # noqa: E402
     # the slot sits on the outer face, leaning with it
-    off = (0.1, 0, 0.16) if is_tall else (0.081, 0, 0.11)
-    lean = 0.16 if is_tall else -0.1
+    off = (0.087, 0, 0.2) if is_tall else (0.081, 0, 0.11)
+    lean = 0.03 if is_tall else -0.1
     s.rotation_euler = (0, -lean, 0)
     s.location = off
     s.parent = p
