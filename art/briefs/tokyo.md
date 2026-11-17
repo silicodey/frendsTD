@@ -14,9 +14,26 @@ Every prompt repeats the shared rules on purpose, so each one works on its own.
 | Monolith | Epic · Support | neighbours gain crit chance | tall plain faceted slab, hovering cap |
 | Juggernaut | Legendary · Signature | railgun through the whole column | long heavy twin-rail cannon on a broad mount |
 | Event Horizon | Legendary · Signature · Support | gravity well that drags enemies back | dark sphere in an open ring cradle, accretion disc |
-| Supernova | Legendary · Signature | map-wide lightning storm | caged miniature star (the pilot; prompt sent separately) |
+| Supernova | Legendary · Signature | map-wide lightning storm | caged miniature star (the pilot: generate it first) |
 
 ---
+
+## Supernova
+```text
+Use the attached image as the style reference (materials, finish, level of detail). Create a CONCEPT MODEL SHEET for a tower in a 3D mobile tower-defense game. Original design: it must not resemble any existing game, franchise or brand.
+
+SUBJECT: "Supernova", the ultimate storm tower of the Tokyo class. A caged, contained miniature star mounted on a low, heavy octagonal plinth. It calls lightning down anywhere on the battlefield and forks it between enemies; every fifth strike cascades down the whole lane. Feeling: dangerous power held in a precise, expensive machine. Legendary rarity: the most prestigious tower in its class.
+
+STYLE: premium stylized hard-surface sci-fi, clean bevels, satin gunmetal and polished chrome, small precise emissive details. Matte, readable, calm. NOT busy, NOT glowing everywhere.
+
+PALETTE (stick to these): body gunmetal #2E3040; secondary panels #454858; light accents #D0D0DA; chrome trim #B8B8C4; emissive glow hot magenta-red #FF1F5A; soft glow pink #FF8FB4. Emissive areas no more than ~20% of the visible surface. No light rays, lens flares, bloom haze or lightning bolts in the image: show the object itself.
+
+CONSTRUCTION (it will be rebuilt from simple 3D shapes): only simple solids — cylinders, spheres, rings/tori, octahedra, bevelled boxes, flat extruded plates, lathe (turned) profiles. No organic sculpting, faces, creatures, text, numbers, logos or loose cables. One strong, instantly recognisable silhouette, about 1.3× as tall as the plinth is wide. Keep the very top clear (a small rank badge floats above it). Must stay readable when shown ~60 pixels tall on a phone, seen from above at 35°, among many other towers.
+
+MOVING PARTS: 2–3 parts that animate (e.g. the star core slowly spins, one or two cage rings gyrate on different axes, small satellites orbit). Mark each one.
+
+SHEET LAYOUT, flat neutral mid-grey background, even studio lighting, no environment: 1) large hero view, 3/4 from above (~35° down); 2) front orthographic view; 3) top orthographic view; 4) small callout of the moving parts with arrows; 5) palette swatches. Labels for the views only.
+```
 
 ## Arc Coil
 
