@@ -184,13 +184,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       b.add(oct(0.07), { ...flat(K.glow), p: [0, 0, 0.3] });
       b.add(box(0.2, 0.02, 0.03), { ...K.glow2, p: [0, 0.075, -0.05] });
       return { muzzle: [0, 0, 0.42], aims: true };
-    case 'gem_flash':
-      b.add(cyl(0.11, 0.13, 0.42, 14), { ...K.body, p: [0, 0, 0.08], r: Z });
-      b.add(tor(0.115, 0.022, 8, 20), { ...K.trim, p: [0, 0, 0.28] });
-      b.add(cyl(0.09, 0.09, 0.02, 16), { ...K.glow, p: [0, 0, 0.292], r: Z });
-      b.add(oct(0.1), { ...flat(K.glow2), p: [0, 0, -0.2] });
-      b.add(tor(0.13, 0.014, 6, 20), { ...K.dark, p: [0, 0, -0.06] });
-      return { muzzle: [0, 0, 0.32], aims: true };
     case 'gem_twin':
       b.add(sph(0.11), { ...K.body });
       b.add(box(0.52, 0.05, 0.07), { ...K.dark, p: [0, 0.02, 0] });
@@ -198,14 +191,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       b.add(oct(0.13), { ...flat(K.glow2), p: [0.25, 0.17, 0], s: [0.7, 1.35, 0.7] });
       for (const x of [-0.25, 0.25]) b.add(cyl(0.05, 0.07, 0.06, 6), { ...flat(K.trim), p: [x, 0.04, 0] });
       return { muzzle: [0, 0.18, 0.05], aims: true };
-    case 'gem_banana':
-      b.add(cyl(0.17, 0.12, 0.1, 6), { ...flat(K.body) });
-      b.add(tor(0.175, 0.012, 6, 6), { ...K.glow, p: [0, 0.05, 0], r: [P2, 0, PI / 6] });
-      b.spin('nana', 'head', [0, 0.3, 0], [0, 0.9, 0], 0.025);
-      b.add(tor(0.2, 0.062, 8, 18, PI * 0.72), { c: 0xffd92e, e: 0.35, ro: 0.42, m: 0, p: [0, 0.44, 0], r: [0, P2, PI * 1.14] });
-      b.add(sph(0.035, 8, 6), { c: 0x5a3a12, ro: 0.7, p: [0, 0.405, 0.185] });
-      b.add(sph(0.03, 8, 6), { c: 0x5a3a12, ro: 0.7, p: [0, 0.405, -0.185] });
-      return { muzzle: [0, 0.3, 0], aims: false };
     case 'gem_pro':
       b.add(cyl(0.16, 0.16, 0.5, 3), { ...flat(K.body), p: [0, 0, 0.06], r: Z });
       b.add(oct(0.1), { ...flat(K.glow), p: [0, 0, 0.34] });
@@ -224,20 +209,6 @@ function head(b: Builder, def: TowerDef, K: Kit): { muzzle: V3; aims: boolean; l
       b.add(tor(0.235, 0.012, 6, 32), { ...K.glow2, r: [P2, 0, 0] });
       b.add(cyl(0.008, 0.008, 0.2, 5), { ...K.trim, p: [0, 0.3, -0.05] });
       return { muzzle: [0, 0, 0.24], aims: true };
-    case 'gem_veo':
-      b.add(cyl(0.2, 0.25, 0.08, 6), { ...flat(K.dark) });
-      b.spin('aperture', 'head', [0, 0.12, 0], [0, 1.2, 0]);
-      b.ring(6, 0.16, () => box(0.06, 0.016, 0.24), { ...K.trim, p: [0, 0.12, 0], r: [0.25, 0.9, 0] });
-      b.add(sph(0.085, 14, 10), { ...K.glow, p: [0, 0.13, 0] });
-      b.add(tor(0.32, 0.014, 6, 40), { ...K.glow2, p: [0, 0.12, 0], r: [P2, 0, 0] });
-      return { muzzle: [0, 0.14, 0], aims: false };
-    case 'gem_ultra':
-      b.add(tor(0.16, 0.03, 8, 6), { ...K.trim, p: [0, 0, 0], r: [P2, 0, 0] });
-      b.add(oct(0.2), { ...flat(K.glow), p: [0, 0.26, 0], s: [0.75, 1.55, 0.75] });
-      b.spin('sat', 'head', [0, 0.26, 0], [0, 1.5, 0]);
-      b.ring(3, 0.33, () => oct(0.085), { ...flat(K.glow2), p: [0, 0.26, 0], s: [0.7, 1.4, 0.7] });
-      b.add(tor(0.33, 0.008, 6, 40), { ...K.trim, p: [0, 0.26, 0], r: [P2, 0, 0] });
-      return { muzzle: [0, 0.3, 0], aims: false };
     case 'gem_deepthink':
       for (const x of [-0.08, 0.08]) b.add(box(0.05, 0.09, 0.82), { ...K.dark, p: [x, 0, 0.22] });
       b.add(box(0.045, 0.03, 0.74), { ...K.glow, p: [0, 0, 0.22] });
@@ -585,6 +556,32 @@ function tokyoPlinth(b: Builder, h = 0.2): number {
   return h + 0.035;
 }
 type Custom = (b: Builder, K: Kit) => { headY: number; muzzle: V3; aims: boolean };
+/** London concept palette and its hexagonal plinth (flat face to the front, wedge with a violet slot, blue slot lights, glowing turntable ring). */
+const LK = {
+  steel: { c: 0x98a3c6, m: 0.45, ro: 0.36 } as Mat, navy: { c: 0x18203a, m: 0.6, ro: 0.4 } as Mat, cobalt: { c: 0x4a62c8, m: 0.4, ro: 0.35 } as Mat,
+  trim: { c: 0xaebcdf, m: 0.85, ro: 0.25 } as Mat, blue: { c: 0x3d7dff, e: 1.0 } as Mat, violet: { c: 0xa855ff, e: 1.0 } as Mat,
+  crystal: { c: 0x86dcff, e: 0.7, m: 0.2, ro: 0.08, flat: true } as Mat,
+};
+function londonPlinth(b: Builder): number {
+  const HEX = PI / 6;
+  b.at('base');
+  b.add(cyl(0.4, 0.44, 0.15, 6), { ...LK.steel, flat: true, p: [0, 0.075, 0], r: [0, HEX, 0] });
+  b.add(cyl(0.36, 0.4, 0.03, 6), { ...LK.steel, flat: true, p: [0, 0.165, 0], r: [0, HEX, 0] });
+  b.add(cyl(0.33, 0.33, 0.01, 6), { ...LK.navy, p: [0, 0.181, 0], r: [0, HEX, 0] });
+  for (const a of [PI / 3, -PI / 3]) {
+    b.xf([Math.sin(a) * 0.384, 0.075, Math.cos(a) * 0.384], [0, a, 0]);
+    b.add(box(0.11, 0.026, 0.012), { ...LK.blue, r: [-0.13, 0, 0] });
+  }
+  const wedge: [number, number][] = [[-0.05, 0], [0.06, 0], [0.05, 0.15], [0.0, 0.18], [-0.05, 0.13]];
+  b.xf([0, 0, 0.385], [0, 0, 0]);
+  b.add(extrude(wedge, 0.11, 0.012), { ...LK.steel, flat: true, r: [0, -P2, 0] });
+  b.add(box(0.02, 0.07, 0.012), { ...LK.violet, p: [0, 0.075, 0.072], r: [-0.08, 0, 0] });
+  b.xf();
+  b.add(cyl(0.17, 0.19, 0.03, 32), { ...LK.navy, p: [0, 0.2, 0] });
+  b.add(tor(0.185, 0.009, 6, 40), { ...LK.blue, p: [0, 0.2, 0], r: [P2, 0, 0] });
+  return 0.215;
+}
+
 const CUSTOM: Record<string, Custom> = {
   // Supernova: a caged red star in a chrome gimbal, between two tall pylons, on a two-tier octagonal plinth
   gk_supernova: (b, K) => {
@@ -791,6 +788,120 @@ const CUSTOM: Record<string, Custom> = {
     for (const sx of [-1, 1]) b.add(cyl(0.09, 0.09, 0.03, 20), { ...chrome, p: [sx * 0.13, Y + 0.08, -0.22], r: [0, 0, P2] });
     b.add(box(0.1, 0.012, 0.03), { ...slot, p: [0, Y + 0.165, -0.22] });
     return { headY: top + 0.05, muzzle: [0, Y, 0.64], aims: true };
+  },
+  // Flare: a crystal-lens searchlight on a two-armed yoke; the focusing ring turns
+  gem_flash: (b) => {
+    const { steel, navy, cobalt, trim, blue, crystal } = LK;
+    const top = londonPlinth(b);
+    b.at('head');
+    const Y = 0.26;
+    b.add(cyl(0.11, 0.13, 0.05, 24), { ...steel, p: [0, 0.025, 0] });
+    const arm: [number, number][] = [[-0.07, 0], [0.07, 0], [0.06, 0.2], [0.03, 0.29], [-0.05, 0.29], [-0.07, 0.2]];
+    for (const sx of [-1, 1]) {
+      b.add(extrude(arm, 0.06, 0.012), { ...steel, flat: true, p: [sx * 0.17, 0.02, 0], r: [0, P2, 0] });
+      b.add(cyl(0.05, 0.05, 0.03, 16), { ...trim, p: [sx * 0.2, Y, 0], r: [0, 0, P2] });
+      b.add(box(0.012, 0.045, 0.016), { ...blue, p: [sx * 0.216, Y, 0] });
+    }
+    b.add(cyl(0.16, 0.16, 0.16, 8), { ...steel, flat: true, p: [0, Y, -0.12], r: [P2, 0, PI / 8] }); // rear housing
+    b.add(cyl(0.165, 0.165, 0.035, 8), { ...cobalt, flat: true, p: [0, Y, -0.1], r: [P2, 0, PI / 8] });
+    b.add(cyl(0.11, 0.11, 0.14, 20), { ...navy, p: [0, Y, 0.02], r: [P2, 0, 0] }); // waist
+    b.add(box(0.012, 0.03, 0.06), { ...blue, p: [0.11, Y, 0.02] });
+    b.add(box(0.012, 0.03, 0.06), { ...blue, p: [-0.11, Y, 0.02] });
+    b.spin('focus', 'head', [0, Y, 0.15], [0, 0, 0.9]);
+    b.add(cyl(0.15, 0.15, 0.12, 24), { ...steel, p: [0, Y, 0.15], r: [P2, 0, 0] });
+    for (let i = 0; i < 4; i++) { const a = (i * PI) / 2 + PI / 4; b.add(box(0.05, 0.022, 0.1), { ...cobalt, p: [Math.cos(a) * 0.152, Y + Math.sin(a) * 0.152, 0.15], r: [0, 0, a] }); }
+    b.add(tor(0.12, 0.014, 8, 32), { ...trim, p: [0, Y, 0.212] });
+    b.at('head');
+    b.add(ico(0.11, 1), { ...crystal, p: [0, Y, 0.2], s: [1, 1, 0.55] }); // the lens
+    return { headY: top, muzzle: [0, Y, 0.26], aims: true };
+  },
+  // Photon Bloom: a light-mortar flower: six hinged petals around a cup holding a glowing crystal seed
+  gem_banana: (b) => {
+    const { steel, navy, cobalt, trim, blue, violet, crystal } = LK;
+    const top = londonPlinth(b);
+    b.add(cyl(0.07, 0.09, 0.06, 20), { ...navy, p: [0, top + 0.03, 0] }); // stem
+    // petals (slowly turning as a crown)
+    const th = 1.1, rot = (x: number, y: number, z: number): V3 => [x, y * Math.cos(th) - z * Math.sin(th), y * Math.sin(th) + z * Math.cos(th)];
+    const plate: [number, number][] = [[-0.075, 0], [0.075, 0], [0.12, 0.13], [0.085, 0.27], [-0.085, 0.27], [-0.12, 0.13]];
+    const inset: [number, number][] = plate.map(([x, y]) => [x * 0.7, 0.035 + y * 0.7]);
+    b.spin('petals', 'base', [0, top + 0.05, 0], [0, 0.22, 0]);
+    for (let i = 0; i < 6; i++) {
+      const a = (i * PI) / 3 + PI / 6, H = top + 0.05;
+      b.xf([Math.sin(a) * 0.15, H, Math.cos(a) * 0.15], [0, a, 0]); // local +Z points outward
+      b.add(extrude(plate, 0.028, 0.01), { ...steel, flat: true, r: [th, 0, 0] });
+      b.add(extrude(inset, 0.04, 0), { ...navy, flat: true, r: [th, 0, 0] });
+      b.add(box(0.07, 0.03, 0.042), { ...cobalt, p: rot(0, 0.255, 0), r: [th, 0, 0] });
+      b.add(cyl(0.024, 0.024, 0.07, 12), { ...trim, p: [0, 0.01, 0], r: [0, 0, P2] }); // hinge
+      b.add(tor(0.025, 0.006, 6, 12), { ...blue, p: [0, 0.01, 0], r: [0, P2, 0] });
+    }
+    b.xf();
+    b.at('base');
+    // the cup and its seed
+    const C = top + 0.06;
+    b.add(cyl(0.13, 0.1, 0.13, 28), { ...steel, p: [0, C + 0.065, 0] });
+    b.add(tor(0.125, 0.016, 8, 32), { ...trim, p: [0, C + 0.13, 0], r: [P2, 0, 0] });
+    b.add(tor(0.12, 0.008, 6, 32), { ...blue, p: [0, C + 0.06, 0], r: [P2, 0, 0] });
+    b.add(cyl(0.11, 0.11, 0.01, 24), { ...navy, p: [0, C + 0.128, 0] });
+    b.add(tor(0.095, 0.008, 6, 32), { ...violet, p: [0, C + 0.135, 0], r: [P2, 0, 0] });
+    const SY = C + 0.19;
+    b.spin('seed', 'base', [0, SY, 0], [0, 0.8, 0], 0.02, 1.8);
+    b.add(oct(0.07), { ...crystal, p: [0, SY, 0], s: [1, 1.35, 1] });
+    b.at('base');
+    return { headY: SY, muzzle: [0, 0, 0], aims: false };
+  },
+  // Halo (support): a wide halo ring on three struts turning above the plinth, a floating crystal at its heart
+  gem_veo: (b) => {
+    const { steel, navy, cobalt, blue, crystal } = LK;
+    const top = londonPlinth(b);
+    const RY = 0.47;
+    b.spin('halo', 'base', [0, RY, 0], [0, 0.35, 0]);
+    b.add(tor(0.34, 0.024, 8, 56), { ...steel, p: [0, RY, 0], r: [P2, 0, 0] });
+    b.add(tor(0.255, 0.02, 8, 48), { ...steel, p: [0, RY, 0], r: [P2, 0, 0] });
+    b.add(tor(0.298, 0.04, 4, 48), { ...navy, p: [0, RY - 0.004, 0], r: [P2, 0, 0], s: [1, 1, 0.35] });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * PI * 2 + PI / 6;
+      b.add(box(0.075, 0.008, 0.016), { ...blue, p: [Math.sin(a) * 0.298, RY + 0.012, Math.cos(a) * 0.298], r: [0, a + P2, 0] });
+    }
+    for (const a of [0, (2 * PI) / 3, (-2 * PI) / 3]) {
+      const bot: V3 = [Math.sin(a) * 0.07, top + 0.02, Math.cos(a) * 0.07], tp: V3 = [Math.sin(a) * 0.3, RY - 0.02, Math.cos(a) * 0.3];
+      const d: V3 = [tp[0] - bot[0], tp[1] - bot[1], tp[2] - bot[2]], len = Math.hypot(...d);
+      b.add(cyl(0.018, 0.024, len, 8), { ...steel, flat: true, p: [(bot[0] + tp[0]) / 2, (bot[1] + tp[1]) / 2, (bot[2] + tp[2]) / 2], dir: d });
+      b.add(box(0.07, 0.04, 0.07), { ...cobalt, p: [Math.sin(a) * 0.34, RY + 0.01, Math.cos(a) * 0.34], r: [0, a, 0] });
+    }
+    const CY = 0.5;
+    b.spin('crystal', 'base', [0, CY, 0], [0, 0.7, 0], 0.025, 1.4);
+    b.add(oct(0.075), { ...crystal, p: [0, CY, 0], s: [1, 1.6, 1] });
+    b.at('base');
+    return { headY: CY, muzzle: [0, 0, 0], aims: false };
+  },
+  // Spectra: a tall triangular crystal prism in a three-legged frame with a waist ring and three crystal-lens emitters
+  gem_ultra: (b) => {
+    const { steel, navy, cobalt, trim, blue, crystal } = LK;
+    const top = londonPlinth(b);
+    b.add(cyl(0.15, 0.17, 0.05, 24), { ...navy, p: [0, top + 0.025, 0] });
+    b.add(tor(0.155, 0.009, 6, 32), { ...blue, p: [0, top + 0.04, 0], r: [P2, 0, 0] });
+    const PH = 0.62, PY = top + 0.05 + PH / 2, WY = top + 0.33;
+    const legAngles = [PI, PI / 3, -PI / 3];
+    for (const a of legAngles) {
+      const bot: V3 = [Math.sin(a) * 0.29, top, Math.cos(a) * 0.29], tp: V3 = [Math.sin(a) * 0.15, top + PH - 0.02, Math.cos(a) * 0.15];
+      const d: V3 = [tp[0] - bot[0], tp[1] - bot[1], tp[2] - bot[2]], len = Math.hypot(...d);
+      const mid: V3 = [(bot[0] + tp[0]) / 2, (bot[1] + tp[1]) / 2, (bot[2] + tp[2]) / 2];
+      b.add(cyl(0.035, 0.055, len, 4), { ...steel, flat: true, p: mid, dir: d });
+      b.add(box(0.03, 0.03, 0.03), { ...cobalt, p: [tp[0], tp[1] + 0.02, tp[2]] });
+      // emitter pod at the waist, facing outward
+      const r = 0.235, pod: V3 = [Math.sin(a) * r, WY, Math.cos(a) * r], out: V3 = [Math.sin(a), 0, Math.cos(a)];
+      b.add(cyl(0.05, 0.05, 0.06, 16), { ...steel, p: pod, dir: out });
+      b.add(tor(0.04, 0.01, 6, 20), { ...trim, p: [pod[0] + out[0] * 0.032, WY, pod[2] + out[2] * 0.032], r: [0, a, 0] });
+      b.add(ico(0.03, 1), { ...crystal, p: [pod[0] + out[0] * 0.034, WY, pod[2] + out[2] * 0.034] });
+      b.add(box(0.03, 0.016, 0.024), { ...cobalt, p: [pod[0], WY + 0.055, pod[2]], r: [0, a, 0] });
+    }
+    b.add(tor(0.19, 0.016, 8, 48), { ...steel, p: [0, WY, 0], r: [P2, 0, 0] }); // waist ring
+    // the prism turns slowly
+    b.spin('prism', 'base', [0, PY, 0], [0, 0.35, 0]);
+    b.add(cyl(0.135, 0.135, PH, 3), { ...crystal, e: 0.6, p: [0, PY, 0] });
+    b.add(cyl(0.02, 0.02, PH * 0.96, 3), { c: 0xa855ff, e: 0.9, p: [0, PY, 0.07] });
+    b.at('base');
+    return { headY: WY, muzzle: [0, 0, 0], aims: false };
   },
 };
 
